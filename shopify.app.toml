@@ -2,7 +2,7 @@
 
 client_id = "5714ef7495e081cbb0a2a09e4ae5cd31"
 name = "image-upload-app"
-application_url = "https://3.108.192.98/"
+application_url = "https://personalize.salty.co.in/"
 embedded = true
 
 [build]
@@ -25,9 +25,9 @@ scopes = "write_metaobject_definitions,write_metaobjects,write_products, write_f
 
 [auth]
 redirect_urls = [ 
-  "https://3.108.192.98/auth/callback",
-  "https://3.108.192.98/auth/shopify/callback",
-  "https://3.108.192.98/api/auth/callback" ]
+  "https://personalize.salty.co.in/auth/callback",
+  "https://personalize.salty.co.in/shopify/callback",
+  "https://personalize.salty.co.in//api/auth/callback" ]
 
 [product.metafields.app.demo_info]
 type = "single_line_text_field"
