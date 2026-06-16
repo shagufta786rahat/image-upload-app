@@ -27,7 +27,7 @@ scopes = "write_metaobject_definitions,write_metaobjects,write_products, write_f
 redirect_urls = [ 
   "https://personalize.salty.co.in/auth/callback",
   "https://personalize.salty.co.in/shopify/callback",
-  "https://personalize.salty.co.in//api/auth/callback" ]
+  "https://personalize.salty.co.in/api/auth/callback" ]
 
 [product.metafields.app.demo_info]
 type = "single_line_text_field"
