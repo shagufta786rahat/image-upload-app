@@ -10,7 +10,7 @@ generator client {
 // See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
 datasource db {
   provider = "mongodb"
-  url      = "mongodb+srv://nickseth71_db_user:3bZ3jwx8nwQ56QAi@imageupload.ksxztgu.mongodb.net/?appName=imageupload"
+  url      = "mongodb+srv://nickseth71_db_user:3bZ3jwx8nwQ56QAi@imageupload.ksxztgu.mongodb.net/imageupload"
 }
 
 model Session {
