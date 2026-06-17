@@ -34,7 +34,7 @@ async function shopifyGraphql(shop, accessToken, query, variables) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data?.errors?.[0]?.message || `Shopify API error (${res.status})`);
+    throw new Error(data?.errors?.[0]?.message || `Shopify API error (${res.status}) (${accessToken})`);
   }
   if (Array.isArray(data?.errors) && data.errors.length > 0) {
     throw new Error(data.errors[0]?.message || "Shopify GraphQL error");
