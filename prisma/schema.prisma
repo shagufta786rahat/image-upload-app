@@ -9,12 +9,13 @@ generator client {
 // enough when changing adapters.
 // See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
 datasource db {
-  provider = "sqlite"
-  url      = "file:dev.sqlite"
+  provider = "mongodb"
+  url      = "mongodb+srv://nickseth71_db_user:3bZ3jwx8nwQ56QAi@imageupload.ksxztgu.mongodb.net/?appName=imageupload"
 }
 
 model Session {
-  id            String    @id
+  session_id    String    @id @default(auto()) @map("_id") @db.ObjectId
+  id            String    @unique
   shop          String
   state         String
   isOnline      Boolean   @default(false)
@@ -29,6 +30,4 @@ model Session {
   locale        String?
   collaborator  Boolean?  @default(false)
   emailVerified Boolean?  @default(false)
-  refreshToken        String?
-  refreshTokenExpires DateTime?
 }

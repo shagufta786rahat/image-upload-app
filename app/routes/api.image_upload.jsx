@@ -24,8 +24,6 @@ function isImageMime(mimeType) {
 }
 
 async function shopifyGraphql(shop, accessToken, query, variables) {
-  console.log(accessToken,"--accessToken--");
-  console.log(shop,"--shop--");
   const res = await fetch(`https://${shop}/admin/api/2026-01/graphql.json`, {
     method: "POST",
     headers: {
