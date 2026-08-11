@@ -3,7 +3,7 @@ import { useLoaderData, useSearchParams, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 50;
 const METAFIELD_NAMESPACE = "custom";
 
 const CUSTOMERS_QUERY = `#graphql
@@ -277,7 +277,7 @@ export default function CustomersPage() {
                 {customers.length === 1 ? "" : "s"}
                 {q ? ` for “${q}”` : ""}
                 {pageInfo.hasNextPage || pageInfo.hasPreviousPage
-                  ? " (paginated)"
+                  ? ""
                   : ""}
               </s-text>
 
