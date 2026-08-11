@@ -1,14 +1,28 @@
-import { useLoaderData, useSearchParams } from "react-router";
+import { useEffect, useState } from "react";
+import { useLoaderData, useSearchParams, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { useRouteError } from "react-router";
 import { authenticate } from "../shopify.server";
 
 const PAGE_SIZE = 10;
 const METAFIELD_NAMESPACE = "custom";
 
 const CUSTOMERS_QUERY = `#graphql
-  query CustomersList($first: Int, $last: Int, $after: String, $before: String) {
-    customers(first: $first, last: $last, after: $after, before: $before, sortKey: UPDATED_AT, reverse: true) {
+  query CustomersList(
+    $first: Int
+    $last: Int
+    $after: String
+    $before: String
+    $query: String
+  ) {
+    customers(
+      first: $first
+      last: $last
+      after: $after
+      before: $before
+      query: $query
+      sortKey: UPDATED_AT
+      reverse: true
+    ) {
       pageInfo {
         hasNextPage
         hasPreviousPage
@@ -44,6 +58,37 @@ const CUSTOMERS_QUERY = `#graphql
   }
 `;
 
+function escapeSearchTerm(term) {
+  return String(term).trim().replace(/[\\:()]/g, "\\$&");
+}
+
+/** Build Shopify customers search query for name / email / phone. */
+function buildCustomerSearchQuery(raw) {
+  const term = String(raw || "").trim();
+  if (!term) return null;
+
+  const escaped = escapeSearchTerm(term);
+  if (!escaped) return null;
+
+  if (term.includes("@")) {
+    return `email:${escaped}*`;
+  }
+
+  const digits = term.replace(/\D/g, "");
+  const compact = term.replace(/\s/g, "");
+  if (digits.length >= 7 && digits.length >= compact.length * 0.6) {
+    return `phone:${digits}* OR phone:+${digits}*`;
+  }
+
+  return [
+    escaped,
+    `first_name:${escaped}*`,
+    `last_name:${escaped}*`,
+    `email:${escaped}*`,
+    `phone:${escaped}*`,
+  ].join(" OR ");
+}
+
 function formatCustomer(node) {
   return {
     id: node.id,
@@ -75,16 +120,26 @@ function fullName(customer) {
   return name || customer.displayName || "—";
 }
 
+function DetailRow({ label, value }) {
+  return (
+    <s-grid gridTemplateColumns="160px 1fr" gap="base" alignItems="start">
+      <s-text color="subdued">{label}</s-text>
+      <s-text>{value || "—"}</s-text>
+    </s-grid>
+  );
+}
+
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
   const url = new URL(request.url);
   const after = url.searchParams.get("after");
   const before = url.searchParams.get("before");
-  const selectedId = url.searchParams.get("customerId");
+  const q = (url.searchParams.get("q") || "").trim();
+  const query = buildCustomerSearchQuery(q);
 
   const variables = before
-    ? { last: PAGE_SIZE, before }
-    : { first: PAGE_SIZE, after: after || null };
+    ? { last: PAGE_SIZE, before, query }
+    : { first: PAGE_SIZE, after: after || null, query };
 
   const response = await admin.graphql(CUSTOMERS_QUERY, { variables });
   const responseJson = await response.json();
@@ -99,12 +154,10 @@ export const loader = async ({ request }) => {
   const customers = (connection?.edges || []).map((edge) =>
     formatCustomer(edge.node),
   );
-  const selected =
-    customers.find((c) => c.id === selectedId) || customers[0] || null;
 
   return {
     customers,
-    selected,
+    q,
     pageInfo: connection?.pageInfo || {
       hasNextPage: false,
       hasPreviousPage: false,
@@ -115,8 +168,14 @@ export const loader = async ({ request }) => {
 };
 
 export default function CustomersPage() {
-  const { customers, selected, pageInfo } = useLoaderData();
+  const { customers, pageInfo, q } = useLoaderData();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [openId, setOpenId] = useState(null);
+  const [draft, setDraft] = useState(q || "");
+
+  useEffect(() => {
+    setDraft(q || "");
+  }, [q]);
 
   const updateParams = (updates) => {
     const next = new URLSearchParams(searchParams);
@@ -125,127 +184,234 @@ export default function CustomersPage() {
       else next.set(key, value);
     }
     setSearchParams(next);
+    setOpenId(null);
+  };
+
+  const runSearch = (value = draft) => {
+    updateParams({
+      q: String(value || "").trim() || null,
+      after: null,
+      before: null,
+    });
+  };
+
+  const clearSearch = () => {
+    setDraft("");
+    updateParams({
+      q: null,
+      after: null,
+      before: null,
+    });
+  };
+
+  const toggle = (id) => {
+    setOpenId((current) => (current === id ? null : id));
   };
 
   return (
     <s-page heading="Customers">
       <s-section heading="All customers">
-        <s-paragraph>
-          First name, last name, email, and phone update on the customer.
-          Date of birth, gender, and social handle are stored in metafields
-          only (no app DB).
-        </s-paragraph>
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            Search by name, email, or phone. Click a row to expand profile and
+            custom metafield details.
+          </s-paragraph>
 
-        {customers.length === 0 ? (
-          <s-box padding="base" borderWidth="base" borderRadius="base">
-            <s-paragraph>No customers found.</s-paragraph>
-          </s-box>
-        ) : (
-          <s-stack direction="block" gap="base">
-            <s-table>
-              <s-table-header-row>
-                <s-table-header listSlot="primary">Name</s-table-header>
-                <s-table-header>Email</s-table-header>
-                <s-table-header>Phone</s-table-header>
-                <s-table-header>Updated</s-table-header>
-                <s-table-header>Action</s-table-header>
-              </s-table-header-row>
-              <s-table-body>
-                {customers.map((customer) => {
-                  const isSelected = selected?.id === customer.id;
+          <s-grid
+            gridTemplateColumns="1fr auto auto"
+            gap="base"
+            alignItems="end"
+          >
+            <s-search-field
+              label="Search customers"
+              labelAccessibilityVisibility="exclusive"
+              name="q"
+              value={draft}
+              placeholder="Search by name, email, or phone"
+              autocomplete="off"
+              onInput={(event) => setDraft(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  runSearch(event.currentTarget.value);
+                }
+              }}
+            />
+            <s-button variant="primary" onClick={() => runSearch()}>
+              Search
+            </s-button>
+            <s-button
+              variant="tertiary"
+              {...(!q && !draft ? { disabled: true } : {})}
+              onClick={clearSearch}
+            >
+              Clear
+            </s-button>
+          </s-grid>
+
+          {q ? (
+            <s-banner tone="info">
+              Showing results for “{q}”. Use Clear to reset the list.
+            </s-banner>
+          ) : null}
+
+          {customers.length === 0 ? (
+            <s-box padding="base" border="base" borderRadius="base">
+              <s-stack direction="block" gap="small">
+                <s-paragraph>
+                  {q
+                    ? `No customers matched “${q}”.`
+                    : "No customers found."}
+                </s-paragraph>
+                {q ? (
+                  <s-button variant="secondary" onClick={clearSearch}>
+                    Clear search
+                  </s-button>
+                ) : null}
+              </s-stack>
+            </s-box>
+          ) : (
+            <s-stack direction="block" gap="base">
+              <s-text color="subdued">
+                Showing {customers.length} customer
+                {customers.length === 1 ? "" : "s"}
+                {q ? ` for “${q}”` : ""}
+                {pageInfo.hasNextPage || pageInfo.hasPreviousPage
+                  ? " (paginated)"
+                  : ""}
+              </s-text>
+
+              <s-box border="base" borderRadius="base" overflow="hidden">
+                {customers.map((customer, index) => {
+                  const isOpen = openId === customer.id;
+                  const subtitle = [customer.email, customer.phone]
+                    .filter(Boolean)
+                    .join(" · ");
+
                   return (
-                    <s-table-row key={customer.id}>
-                      <s-table-cell>{fullName(customer)}</s-table-cell>
-                      <s-table-cell>{customer.email || "—"}</s-table-cell>
-                      <s-table-cell>{customer.phone || "—"}</s-table-cell>
-                      <s-table-cell>
-                        {formatDate(customer.updatedAt)}
-                      </s-table-cell>
-                      <s-table-cell>
-                        <s-button
-                          variant={isSelected ? "primary" : "secondary"}
-                          onClick={() =>
-                            updateParams({ customerId: customer.id })
-                          }
+                    <s-stack key={customer.id} direction="block" gap="none">
+                      {index > 0 ? (
+                        <s-box paddingInline="base">
+                          <s-divider />
+                        </s-box>
+                      ) : null}
+
+                      <s-clickable
+                        padding="base"
+                        accessibilityLabel={`${isOpen ? "Collapse" : "Expand"} details for ${fullName(customer)}`}
+                        onClick={() => toggle(customer.id)}
+                      >
+                        <s-grid
+                          gridTemplateColumns="1fr auto"
+                          gap="base"
+                          alignItems="center"
                         >
-                          {isSelected ? "Selected" : "View"}
-                        </s-button>
-                      </s-table-cell>
-                    </s-table-row>
+                          <s-stack direction="block" gap="none">
+                            <s-heading>{fullName(customer)}</s-heading>
+                            <s-paragraph color="subdued">
+                              {subtitle || "No email / phone"}
+                            </s-paragraph>
+                          </s-stack>
+                          <s-stack
+                            direction="inline"
+                            gap="small"
+                            alignItems="center"
+                          >
+                            <s-text color="subdued">
+                              {formatDate(customer.updatedAt)}
+                            </s-text>
+                            <s-icon
+                              type={isOpen ? "chevron-up" : "chevron-down"}
+                            />
+                          </s-stack>
+                        </s-grid>
+                      </s-clickable>
+
+                      {isOpen ? (
+                        <s-box
+                          padding="base"
+                          background="subdued"
+                          borderStyle="solid none none none"
+                          border="base"
+                        >
+                          <s-stack direction="block" gap="base">
+                            <s-stack direction="block" gap="small">
+                              <s-heading>Profile</s-heading>
+                              <DetailRow
+                                label="First name"
+                                value={customer.firstName}
+                              />
+                              <DetailRow
+                                label="Last name"
+                                value={customer.lastName}
+                              />
+                              <DetailRow label="Email" value={customer.email} />
+                              <DetailRow label="Phone" value={customer.phone} />
+                              <DetailRow
+                                label="Last updated"
+                                value={formatDate(customer.updatedAt)}
+                              />
+                              <DetailRow
+                                label="Customer ID"
+                                value={customer.id}
+                              />
+                            </s-stack>
+
+                            <s-divider />
+
+                            <s-stack direction="block" gap="small">
+                              <s-heading>Custom details (metafields)</s-heading>
+                              <DetailRow
+                                label="Date of birth"
+                                value={customer.customDetails.dateOfBirth}
+                              />
+                              <DetailRow
+                                label="Gender"
+                                value={customer.customDetails.gender}
+                              />
+                              <DetailRow
+                                label="Social handle"
+                                value={
+                                  customer.customDetails.socialMediaHandle
+                                }
+                              />
+                            </s-stack>
+                          </s-stack>
+                        </s-box>
+                      ) : null}
+                    </s-stack>
                   );
                 })}
-              </s-table-body>
-            </s-table>
+              </s-box>
 
-            <s-stack direction="inline" gap="base">
-              <s-button
-                {...(!pageInfo.hasPreviousPage ? { disabled: true } : {})}
-                onClick={() =>
-                  updateParams({
-                    before: pageInfo.startCursor,
-                    after: null,
-                    customerId: null,
-                  })
-                }
-              >
-                Previous
-              </s-button>
-              <s-button
-                {...(!pageInfo.hasNextPage ? { disabled: true } : {})}
-                onClick={() =>
-                  updateParams({
-                    after: pageInfo.endCursor,
-                    before: null,
-                    customerId: null,
-                  })
-                }
-              >
-                Next
-              </s-button>
+              <s-stack direction="inline" gap="base">
+                <s-button
+                  {...(!pageInfo.hasPreviousPage ? { disabled: true } : {})}
+                  onClick={() =>
+                    updateParams({
+                      before: pageInfo.startCursor,
+                      after: null,
+                    })
+                  }
+                >
+                  Previous
+                </s-button>
+                <s-button
+                  {...(!pageInfo.hasNextPage ? { disabled: true } : {})}
+                  onClick={() =>
+                    updateParams({
+                      after: pageInfo.endCursor,
+                      before: null,
+                    })
+                  }
+                >
+                  Next
+                </s-button>
+              </s-stack>
             </s-stack>
-          </s-stack>
-        )}
+          )}
+        </s-stack>
       </s-section>
-
-      {selected ? (
-        <s-section heading="Customer details">
-          <s-stack direction="block" gap="base">
-            <s-box padding="base" borderWidth="base" borderRadius="base">
-              <s-stack direction="block" gap="small">
-                <s-heading>Profile</s-heading>
-                <s-paragraph>
-                  First name: {selected.firstName || "—"}
-                </s-paragraph>
-                <s-paragraph>
-                  Last name: {selected.lastName || "—"}
-                </s-paragraph>
-                <s-paragraph>Email: {selected.email || "—"}</s-paragraph>
-                <s-paragraph>Phone: {selected.phone || "—"}</s-paragraph>
-                <s-paragraph>
-                  Last updated: {formatDate(selected.updatedAt)}
-                </s-paragraph>
-                <s-paragraph>Customer ID: {selected.id}</s-paragraph>
-              </s-stack>
-            </s-box>
-
-            <s-box padding="base" borderWidth="base" borderRadius="base">
-              <s-stack direction="block" gap="small">
-                <s-heading>Custom details (metafields)</s-heading>
-                <s-paragraph>
-                  Date of birth: {selected.customDetails.dateOfBirth || "—"}
-                </s-paragraph>
-                <s-paragraph>
-                  Gender: {selected.customDetails.gender || "—"}
-                </s-paragraph>
-                <s-paragraph>
-                  Social media handle:{" "}
-                  {selected.customDetails.socialMediaHandle || "—"}
-                </s-paragraph>
-              </s-stack>
-            </s-box>
-          </s-stack>
-        </s-section>
-      ) : null}
     </s-page>
   );
 }
