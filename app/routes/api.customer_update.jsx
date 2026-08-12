@@ -1,7 +1,7 @@
 import { jsonCors, optionsCors } from "../cors.server";
 import { getOfflineSession, shopifyGraphql } from "../shopify-api.server";
 
-const METAFIELD_NAMESPACE = "custom";
+const METAFIELD_NAMESPACE = "eshop";
 const METHODS = "GET, POST, PUT, OPTIONS";
 
 const CUSTOM_METAFIELD_KEYS = {
