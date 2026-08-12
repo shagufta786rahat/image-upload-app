@@ -1,5 +1,6 @@
-import { getCorsOrigin, jsonCors, optionsCors } from "../cors.server";
+import { jsonCors, optionsCors } from "../cors.server";
 import { getOfflineSession, shopifyGraphql } from "../shopify-api.server";
+import { uploadShopifyFile } from "../shopify-file-upload.server";
 
 const METAFIELD_NAMESPACE = "eshop";
 const PROFILE_PICTURE_KEY = "profile_picture";
@@ -83,30 +84,12 @@ function formatProfilePicture(customer) {
   };
 }
 
-/** Reuse existing /api/image_upload endpoint. */
-async function uploadViaImageUploadApi(request, shop, file) {
-  const origin = new URL(request.url).origin;
-  const uploadUrl = `${origin}/api/image_upload?shop=${encodeURIComponent(shop)}`;
-
-  const formData = new FormData();
-  formData.append("file", file, file.name || "profile.jpg");
-
-  const res = await fetch(uploadUrl, {
-    method: "POST",
-    body: formData,
-    headers: {
-      Origin: getCorsOrigin(request),
-    },
-  });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data?.ok) {
-    throw new Error(data?.error || `Image upload failed (${res.status})`);
-  }
+/** Upload via shared Shopify Files helper (no internal HTTP roundtrip). */
+async function uploadProfileImage(shop, accessToken, file) {
+  const data = await uploadShopifyFile(shop, accessToken, file);
   if (!data.fileId) {
     throw new Error("Image upload did not return fileId");
   }
-
   return {
     fileId: data.fileId,
     url: data.url || "",
@@ -258,7 +241,7 @@ async function handleUpload(request) {
   let fileId = existingFileId;
 
   if (file) {
-    uploaded = await uploadViaImageUploadApi(request, shop, file);
+    uploaded = await uploadProfileImage(shop, offline.accessToken, file);
     fileId = uploaded.fileId;
   }
 
