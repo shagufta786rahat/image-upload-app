@@ -4,7 +4,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 
 const PAGE_SIZE = 50;
-const METAFIELD_NAMESPACE = "custom";
+const METAFIELD_NAMESPACE = "eshop";
 
 const CUSTOMERS_QUERY = `#graphql
   query CustomersList(
