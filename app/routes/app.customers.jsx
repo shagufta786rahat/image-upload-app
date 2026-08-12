@@ -52,6 +52,22 @@ const CUSTOMERS_QUERY = `#graphql
           socialMediaHandle: metafield(namespace: "${METAFIELD_NAMESPACE}", key: "social_media_handle") {
             value
           }
+          profilePicture: metafield(namespace: "${METAFIELD_NAMESPACE}", key: "profile_picture") {
+            value
+            reference {
+              ... on MediaImage {
+                id
+                image {
+                  url
+                  altText
+                }
+              }
+              ... on GenericFile {
+                id
+                url
+              }
+            }
+          }
         }
       }
     }
@@ -90,6 +106,8 @@ function buildCustomerSearchQuery(raw) {
 }
 
 function formatCustomer(node) {
+  const profileRef = node.profilePicture?.reference;
+  const profileUrl = profileRef?.image?.url || profileRef?.url || "";
   return {
     id: node.id,
     firstName: node.firstName || "",
@@ -102,6 +120,10 @@ function formatCustomer(node) {
       dateOfBirth: node.dateOfBirth?.value || "",
       gender: node.gender?.value || "",
       socialMediaHandle: node.socialMediaHandle?.value || "",
+      profilePicture: {
+        fileId: node.profilePicture?.value || profileRef?.id || "",
+        url: profileUrl,
+      },
     },
   };
 }
@@ -302,10 +324,23 @@ export default function CustomersPage() {
                         onClick={() => toggle(customer.id)}
                       >
                         <s-grid
-                          gridTemplateColumns="1fr auto"
+                          gridTemplateColumns="auto 1fr auto"
                           gap="base"
                           alignItems="center"
                         >
+                          {customer.customDetails.profilePicture.url ? (
+                            <s-thumbnail
+                              size="small"
+                              src={customer.customDetails.profilePicture.url}
+                              alt={fullName(customer)}
+                            />
+                          ) : (
+                            <s-avatar
+                              initials={fullName(customer)
+                                .slice(0, 2)
+                                .toUpperCase()}
+                            />
+                          )}
                           <s-stack direction="block" gap="none">
                             <s-heading>{fullName(customer)}</s-heading>
                             <s-paragraph color="subdued">
@@ -361,6 +396,20 @@ export default function CustomersPage() {
 
                             <s-stack direction="block" gap="small">
                               <s-heading>Custom details (metafields)</s-heading>
+                              <s-stack direction="block" gap="small">
+                                <s-text color="subdued">Profile picture</s-text>
+                                {customer.customDetails.profilePicture.url ? (
+                                  <s-thumbnail
+                                    size="large"
+                                    src={
+                                      customer.customDetails.profilePicture.url
+                                    }
+                                    alt={fullName(customer)}
+                                  />
+                                ) : (
+                                  <s-text>—</s-text>
+                                )}
+                              </s-stack>
                               <DetailRow
                                 label="Date of birth"
                                 value={customer.customDetails.dateOfBirth}

@@ -1,43 +1,12 @@
 import prisma from "../db.server";
-import { jsonCors, optionsCors } from "../cors.server";
+import { getCorsOrigin, jsonCors, optionsCors } from "../cors.server";
 
 const METAFIELD_NAMESPACE = "custom";
+const PROFILE_PICTURE_KEY = "profile_picture";
 const METHODS = "GET, POST, PUT, OPTIONS";
 
-const CUSTOM_METAFIELD_KEYS = {
-  dateOfBirth: "date_of_birth",
-  gender: "gender",
-  socialMediaHandle: "social_media_handle",
-};
-
-const METAFIELD_TYPES = {
-  date_of_birth: "single_line_text_field",
-  gender: "single_line_text_field",
-  social_media_handle: "single_line_text_field",
-  profile_picture: "file_reference",
-};
-
-const CUSTOMER_FIELDS_FRAGMENT = `
-  id
-  firstName
-  lastName
-  updatedAt
-  defaultEmailAddress {
-    emailAddress
-  }
-  defaultPhoneNumber {
-    phoneNumber
-  }
-  dateOfBirth: metafield(namespace: "${METAFIELD_NAMESPACE}", key: "date_of_birth") {
-    value
-  }
-  gender: metafield(namespace: "${METAFIELD_NAMESPACE}", key: "gender") {
-    value
-  }
-  socialMediaHandle: metafield(namespace: "${METAFIELD_NAMESPACE}", key: "social_media_handle") {
-    value
-  }
-  profilePicture: metafield(namespace: "${METAFIELD_NAMESPACE}", key: "profile_picture") {
+const PROFILE_PICTURE_FRAGMENT = `
+  profilePicture: metafield(namespace: "${METAFIELD_NAMESPACE}", key: "${PROFILE_PICTURE_KEY}") {
     type
     value
     reference {
@@ -56,11 +25,14 @@ const CUSTOMER_FIELDS_FRAGMENT = `
   }
 `;
 
-const CUSTOMER_UPDATE_MUTATION = `#graphql
-  mutation customerUpdate($input: CustomerInput!) {
+const SET_PROFILE_PICTURE_MUTATION = `#graphql
+  mutation setCustomerProfilePicture($input: CustomerInput!) {
     customerUpdate(input: $input) {
       customer {
-        ${CUSTOMER_FIELDS_FRAGMENT}
+        id
+        firstName
+        lastName
+        ${PROFILE_PICTURE_FRAGMENT}
       }
       userErrors {
         field
@@ -70,10 +42,13 @@ const CUSTOMER_UPDATE_MUTATION = `#graphql
   }
 `;
 
-const CUSTOMER_QUERY = `#graphql
-  query CustomerDetails($id: ID!) {
+const GET_PROFILE_PICTURE_QUERY = `#graphql
+  query CustomerProfilePicture($id: ID!) {
     customer(id: $id) {
-      ${CUSTOMER_FIELDS_FRAGMENT}
+      id
+      firstName
+      lastName
+      ${PROFILE_PICTURE_FRAGMENT}
     }
   }
 `;
@@ -87,22 +62,6 @@ function toCustomerGid(id) {
   return `gid://shopify/Customer/${numeric}`;
 }
 
-function normalizePhone(value) {
-  if (value == null) return null;
-  const raw = String(value).trim();
-  if (!raw) return "";
-
-  const digits = raw.replace(/\D/g, "");
-  if (!digits) return null;
-
-  return `+${digits}`;
-}
-
-function normalizeEmail(value) {
-  if (value == null) return null;
-  return String(value).trim();
-}
-
 function toFileGid(id) {
   if (id == null || id === "") return null;
   const raw = String(id).trim();
@@ -110,31 +69,16 @@ function toFileGid(id) {
   return null;
 }
 
-function getProfilePictureUrl(metafield) {
-  if (!metafield?.reference) return "";
-  return metafield.reference.image?.url || metafield.reference.url || "";
-}
-
-function formatCustomer(customer) {
-  if (!customer) return null;
+function formatProfilePicture(customer) {
+  const metafield = customer?.profilePicture;
+  const reference = metafield?.reference;
   return {
-    id: customer.id,
-    firstName: customer.firstName || "",
-    lastName: customer.lastName || "",
-    updatedAt: customer.updatedAt || null,
-    email: customer.defaultEmailAddress?.emailAddress || "",
-    phone: customer.defaultPhoneNumber?.phoneNumber || "",
-    customDetails: {
-      dateOfBirth: customer.dateOfBirth?.value || "",
-      gender: customer.gender?.value || "",
-      socialMediaHandle: customer.socialMediaHandle?.value || "",
-      profilePicture: {
-        fileId:
-          customer.profilePicture?.value ||
-          customer.profilePicture?.reference?.id ||
-          "",
-        url: getProfilePictureUrl(customer.profilePicture),
-      },
+    customerId: customer?.id || "",
+    firstName: customer?.firstName || "",
+    lastName: customer?.lastName || "",
+    profilePicture: {
+      fileId: metafield?.value || reference?.id || "",
+      url: reference?.image?.url || reference?.url || "",
     },
   };
 }
@@ -157,7 +101,6 @@ async function refreshOfflineToken(session) {
   );
 
   const data = await response.json();
-
   if (!response.ok) {
     throw new Error(`Token refresh failed: ${JSON.stringify(data)}`);
   }
@@ -210,13 +153,11 @@ async function shopifyGraphql(shop, accessToken, query, variables) {
   }
 
   const data = await res.json().catch(() => ({}));
-
   if (!res.ok) {
     throw new Error(
       data?.errors?.[0]?.message || `Shopify API error (${res.status})`,
     );
   }
-
   if (Array.isArray(data?.errors) && data.errors.length > 0) {
     throw new Error(data.errors[0]?.message || "Shopify GraphQL error");
   }
@@ -228,10 +169,7 @@ async function getOfflineSession(shop) {
   const session = await prisma.session.findFirst({
     where: { shop, isOnline: false },
   });
-
-  if (!session?.accessToken) {
-    return null;
-  }
+  if (!session?.accessToken) return null;
 
   let accessToken = session.accessToken;
   if (
@@ -244,52 +182,67 @@ async function getOfflineSession(shop) {
   return { session, accessToken };
 }
 
-function buildMetafields(body) {
-  const metafields = [];
+/** Reuse existing /api/image_upload endpoint. */
+async function uploadViaImageUploadApi(request, shop, file) {
+  const origin = new URL(request.url).origin;
+  const uploadUrl = `${origin}/api/image_upload?shop=${encodeURIComponent(shop)}`;
 
-  for (const [bodyKey, metafieldKey] of Object.entries(CUSTOM_METAFIELD_KEYS)) {
-    if (body[bodyKey] === undefined && body[metafieldKey] === undefined) {
-      continue;
-    }
-    const value = body[bodyKey] ?? body[metafieldKey];
-    if (value === null || value === undefined) continue;
+  const formData = new FormData();
+  formData.append("file", file, file.name || "profile.jpg");
 
-    const trimmed = String(value).trim();
-    if (!trimmed) continue;
+  const res = await fetch(uploadUrl, {
+    method: "POST",
+    body: formData,
+    headers: {
+      Origin: getCorsOrigin(request),
+    },
+  });
 
-    metafields.push({
-      namespace: METAFIELD_NAMESPACE,
-      key: metafieldKey,
-      type: METAFIELD_TYPES[metafieldKey],
-      value: trimmed,
-    });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) {
+    throw new Error(data?.error || `Image upload failed (${res.status})`);
+  }
+  if (!data.fileId) {
+    throw new Error("Image upload did not return fileId");
   }
 
-  const profileRaw =
-    body.profilePicture ??
-    body.profilePictureFileId ??
-    body.profile_picture ??
-    body.fileId;
-
-  if (profileRaw !== undefined && profileRaw !== null && profileRaw !== "") {
-    const fileGid = toFileGid(profileRaw);
-    if (!fileGid) {
-      throw new Error(
-        "Invalid profilePicture fileId. Use /api/customer_profile_picture to upload, or pass a Shopify file GID",
-      );
-    }
-    metafields.push({
-      namespace: METAFIELD_NAMESPACE,
-      key: "profile_picture",
-      type: METAFIELD_TYPES.profile_picture,
-      value: fileGid,
-    });
-  }
-
-  return metafields;
+  return {
+    fileId: data.fileId,
+    url: data.url || "",
+    filename: data.filename || file.name || "",
+  };
 }
 
-async function handleGetCustomer(request) {
+async function setProfilePictureMetafield(shop, accessToken, customerId, fileId) {
+  const { data } = await shopifyGraphql(
+    shop,
+    accessToken,
+    SET_PROFILE_PICTURE_MUTATION,
+    {
+      input: {
+        id: customerId,
+        metafields: [
+          {
+            namespace: METAFIELD_NAMESPACE,
+            key: PROFILE_PICTURE_KEY,
+            type: "file_reference",
+            value: fileId,
+          },
+        ],
+      },
+    },
+  );
+
+  const payload = data?.data?.customerUpdate;
+  const userErrors = payload?.userErrors || [];
+  if (userErrors.length > 0) {
+    throw new Error(userErrors.map((e) => e.message).join(", "));
+  }
+
+  return payload?.customer;
+}
+
+async function handleGet(request) {
   const url = new URL(request.url);
   const shop =
     url.searchParams.get("shop") ||
@@ -323,7 +276,7 @@ async function handleGetCustomer(request) {
   const { data } = await shopifyGraphql(
     shop,
     offline.accessToken,
-    CUSTOMER_QUERY,
+    GET_PROFILE_PICTURE_QUERY,
     { id: customerId },
   );
 
@@ -339,13 +292,13 @@ async function handleGetCustomer(request) {
 
   return jsonCors(
     request,
-    { ok: true, customer: formatCustomer(customer) },
+    { ok: true, ...formatProfilePicture(customer) },
     200,
     METHODS,
   );
 }
 
-async function handleUpdateCustomer(request) {
+async function handleUpload(request) {
   const url = new URL(request.url);
   const shop =
     url.searchParams.get("shop") ||
@@ -355,21 +308,32 @@ async function handleUpdateCustomer(request) {
     return jsonCors(request, { ok: false, error: "Missing shop" }, 400, METHODS);
   }
 
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return jsonCors(
-      request,
-      { ok: false, error: "Invalid JSON body" },
-      400,
-      METHODS,
+  const contentType = request.headers.get("content-type") || "";
+  let customerId = toCustomerGid(url.searchParams.get("customerId"));
+  let file = null;
+  let existingFileId = null;
+
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+    customerId = toCustomerGid(
+      formData.get("customerId") || formData.get("id") || customerId,
+    );
+    const rawFile =
+      formData.get("profilePicture") ||
+      formData.get("profile_picture") ||
+      formData.get("file");
+    file = rawFile && typeof rawFile !== "string" ? rawFile : null;
+    existingFileId = toFileGid(
+      formData.get("fileId") || formData.get("profilePictureFileId"),
+    );
+  } else {
+    const body = await request.json();
+    customerId = toCustomerGid(body.customerId || body.id || customerId);
+    existingFileId = toFileGid(
+      body.fileId || body.profilePicture || body.profilePictureFileId,
     );
   }
 
-  const customerId = toCustomerGid(
-    body.customerId || body.id || url.searchParams.get("customerId"),
-  );
   if (!customerId) {
     return jsonCors(
       request,
@@ -389,104 +353,48 @@ async function handleUpdateCustomer(request) {
     );
   }
 
-  const input = { id: customerId };
+  let uploaded = null;
+  let fileId = existingFileId;
 
-  if (body.firstName !== undefined) {
-    input.firstName = String(body.firstName ?? "").trim();
-  }
-  if (body.lastName !== undefined) {
-    input.lastName = String(body.lastName ?? "").trim();
-  }
-
-  const emailRaw = body.email ?? body.emailAddress;
-  if (emailRaw !== undefined) {
-    const email = normalizeEmail(emailRaw);
-    if (email) {
-      input.email = email;
-    }
+  if (file) {
+    uploaded = await uploadViaImageUploadApi(request, shop, file);
+    fileId = uploaded.fileId;
   }
 
-  const phoneRaw = body.phone ?? body.phoneNumber;
-  if (phoneRaw !== undefined) {
-    const phone = normalizePhone(phoneRaw);
-    if (phone === null) {
-      return jsonCors(
-        request,
-        {
-          ok: false,
-          error: "Invalid phone number. Use a valid number like +15551234567",
-        },
-        400,
-        METHODS,
-      );
-    }
-    if (phone) {
-      input.phone = phone;
-    }
-  }
-
-  let metafields;
-  try {
-    metafields = buildMetafields(body);
-  } catch (error) {
-    return jsonCors(
-      request,
-      { ok: false, error: error.message },
-      400,
-      METHODS,
-    );
-  }
-
-  if (metafields.length > 0) {
-    input.metafields = metafields;
-  }
-
-  if (
-    input.firstName === undefined &&
-    input.lastName === undefined &&
-    input.email === undefined &&
-    input.phone === undefined &&
-    !input.metafields
-  ) {
+  if (!fileId) {
     return jsonCors(
       request,
       {
         ok: false,
         error:
-          "Provide at least one field to update: firstName, lastName, phone, email, dateOfBirth, gender, socialMediaHandle",
+          "Provide an image file (FormData field: profilePicture/file) or an existing fileId",
       },
       400,
       METHODS,
     );
   }
 
-  const { data } = await shopifyGraphql(
+  const customer = await setProfilePictureMetafield(
     shop,
     offline.accessToken,
-    CUSTOMER_UPDATE_MUTATION,
-    { input },
+    customerId,
+    fileId,
   );
 
-  const payload = data?.data?.customerUpdate;
-  const userErrors = payload?.userErrors || [];
-  if (userErrors.length > 0) {
-    return jsonCors(
-      request,
-      {
-        ok: false,
-        error: userErrors.map((e) => e.message).join(", "),
-        userErrors,
-      },
-      400,
-      METHODS,
-    );
+  const result = formatProfilePicture(customer);
+  if (uploaded?.url && !result.profilePicture.url) {
+    result.profilePicture.url = uploaded.url;
+  }
+  if (uploaded?.fileId) {
+    result.profilePicture.fileId = uploaded.fileId;
   }
 
   return jsonCors(
     request,
     {
       ok: true,
-      customer: formatCustomer(payload?.customer),
+      ...result,
+      uploaded: uploaded || undefined,
     },
     200,
     METHODS,
@@ -508,11 +416,11 @@ export async function loader({ request }) {
   }
 
   try {
-    return await handleGetCustomer(request);
+    return await handleGet(request);
   } catch (error) {
     return jsonCors(
       request,
-      { ok: false, error: error.message || "Failed to load customer" },
+      { ok: false, error: error.message || "Failed to load profile picture" },
       500,
       METHODS,
     );
@@ -534,11 +442,14 @@ export async function action({ request }) {
   }
 
   try {
-    return await handleUpdateCustomer(request);
+    return await handleUpload(request);
   } catch (error) {
     return jsonCors(
       request,
-      { ok: false, error: error.message || "Failed to update customer" },
+      {
+        ok: false,
+        error: error.message || "Failed to update profile picture",
+      },
       500,
       METHODS,
     );

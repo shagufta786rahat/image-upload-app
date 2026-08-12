@@ -1,19 +1,7 @@
 import prisma from "../db.server";
+import { jsonCors, optionsCors } from "../cors.server";
 
-const json = (data, status = 200, corsOrigin = "*") =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": corsOrigin,
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    },
-  });
-
-function getCorsOrigin(request) {
-  return request.headers.get("origin") || "*";
-}
+const METHODS = "GET, OPTIONS";
 
 function toNumericId(gidOrId) {
   if (gidOrId == null) return null;
@@ -366,7 +354,6 @@ async function expandCollections(shop, accessToken, maxSaverData) {
 }
 
 async function handleMaxSaver(request) {
-  const corsOrigin = getCorsOrigin(request);
   const url = new URL(request.url);
   const shop =
     url.searchParams.get("shop") ||
@@ -375,7 +362,7 @@ async function handleMaxSaver(request) {
     url.searchParams.get("expand_collections") !== "false";
 
   if (!shop) {
-    return json({ ok: false, error: "Missing shop" }, 400, corsOrigin);
+    return jsonCors(request, { ok: false, error: "Missing shop" }, 400, METHODS);
   }
 
   const session = await prisma.session.findFirst({
@@ -383,10 +370,11 @@ async function handleMaxSaver(request) {
   });
 
   if (!session?.accessToken) {
-    return json(
+    return jsonCors(
+      request,
       { ok: false, error: "Offline token not found" },
       401,
-      corsOrigin,
+      METHODS,
     );
   }
 
@@ -407,10 +395,11 @@ async function handleMaxSaver(request) {
 
   const metafield = data?.data?.shop?.metafield;
   if (!metafield) {
-    return json(
+    return jsonCors(
+      request,
       { ok: true, maxSaverData: [], message: "max_saver metafield not found" },
       200,
-      corsOrigin,
+      METHODS,
     );
   }
 
@@ -429,45 +418,48 @@ async function handleMaxSaver(request) {
     maxSaverData = result.maxSaverData;
   }
 
-  return json(
+  return jsonCors(
+    request,
     {
       ok: true,
       maxSaverData,
       collectionsExpanded: expand,
     },
     200,
-    corsOrigin,
+    METHODS,
   );
 }
 
 export async function loader({ request }) {
-  const corsOrigin = getCorsOrigin(request);
-
   if (request.method === "OPTIONS") {
-    return json({ ok: true }, 204, corsOrigin);
+    return optionsCors(request, METHODS);
   }
 
   if (request.method !== "GET") {
-    return json({ ok: false, error: "Method not allowed" }, 405, corsOrigin);
+    return jsonCors(
+      request,
+      { ok: false, error: "Method not allowed" },
+      405,
+      METHODS,
+    );
   }
 
   try {
     return await handleMaxSaver(request);
   } catch (error) {
-    return json(
+    return jsonCors(
+      request,
       { ok: false, error: error.message || "Failed to load max saver data" },
       500,
-      corsOrigin,
+      METHODS,
     );
   }
 }
 
 export async function action({ request }) {
-  const corsOrigin = getCorsOrigin(request);
-
   if (request.method === "OPTIONS") {
-    return json({ ok: true }, 204, corsOrigin);
+    return optionsCors(request, METHODS);
   }
 
-  return json({ ok: false, error: "Use GET" }, 405, corsOrigin);
+  return jsonCors(request, { ok: false, error: "Use GET" }, 405, METHODS);
 }

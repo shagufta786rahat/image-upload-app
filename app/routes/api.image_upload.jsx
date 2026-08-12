@@ -1,23 +1,11 @@
 import prisma from "../db.server";
+import { jsonCors, optionsCors } from "../cors.server";
 
-const json = (data, status = 200, corsOrigin = "*") =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": corsOrigin,
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    },
-  });
+const METHODS = "GET, POST, OPTIONS";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
-
-function getCorsOrigin(request) {
-  return request.headers.get("origin") || "*";
-}
 
 function isImageMime(mimeType) {
   return String(mimeType || "").toLowerCase().startsWith("image/");
@@ -253,14 +241,13 @@ async function resolveFileCdnUrl(shop, accessToken, fileId, initialFile) {
 }
 
 async function handleUpload(request) {
-  const corsOrigin = getCorsOrigin(request);
   const url = new URL(request.url);
   const shop =
     url.searchParams.get("shop") ||
     request.headers.get("x-shopify-shop-domain");
 
   if (!shop) {
-    return json({ ok: false, error: "Missing shop" }, 400, corsOrigin);
+    return jsonCors(request, { ok: false, error: "Missing shop" }, 400, METHODS);
   }
 
   const session = await prisma.session.findFirst({
@@ -268,33 +255,46 @@ async function handleUpload(request) {
   });
 
   if (!session?.accessToken) {
-    return json({ ok: false, error: "Offline token not found" }, 401, corsOrigin);
+    return jsonCors(
+      request,
+      { ok: false, error: "Offline token not found" },
+      401,
+      METHODS,
+    );
   }
   let accessToken = session.accessToken;
   if (
-    session.expires &&
-    new Date(session.expires).getTime() <
-      Date.now() + 5 * 60 * 1000
+    session.expires &&
+    new Date(session.expires).getTime() < Date.now() + 5 * 60 * 1000
   ) {
-    accessToken = await refreshOfflineToken(session);
+    accessToken = await refreshOfflineToken(session);
   }
   const formData = await request.formData();
   const file = formData.get("file");
 
   if (!file || typeof file === "string") {
-    return json({ ok: false, error: "Invalid file upload" }, 400, corsOrigin);
-  }
-
-  if (file.size > MAX_FILE_BYTES) {
-    return json(
-      { ok: false, error: "File is too large (max 20 MB)" },
+    return jsonCors(
+      request,
+      { ok: false, error: "Invalid file upload" },
       400,
-      corsOrigin,
+      METHODS,
     );
   }
 
-  const filename = file.name || (isImageMime(file.type) ? "upload.jpg" : "upload.bin");
-  const mimeType = file.type || (isImageMime(filename) ? "image/jpeg" : "application/octet-stream");
+  if (file.size > MAX_FILE_BYTES) {
+    return jsonCors(
+      request,
+      { ok: false, error: "File is too large (max 20 MB)" },
+      400,
+      METHODS,
+    );
+  }
+
+  const filename =
+    file.name || (isImageMime(file.type) ? "upload.jpg" : "upload.bin");
+  const mimeType =
+    file.type ||
+    (isImageMime(filename) ? "image/jpeg" : "application/octet-stream");
 
   const { target, contentType } = await createStagedUpload(
     shop,
@@ -319,7 +319,8 @@ async function handleUpload(request) {
     created,
   );
 
-  return json(
+  return jsonCors(
+    request,
     {
       ok: true,
       url: cdnUrl,
@@ -329,34 +330,43 @@ async function handleUpload(request) {
       contentType,
     },
     200,
-    corsOrigin,
+    METHODS,
   );
 }
 
 export async function loader({ request }) {
-  const corsOrigin = getCorsOrigin(request);
   if (request.method === "OPTIONS") {
-    return json({ ok: true }, 204, corsOrigin);
+    return optionsCors(request, METHODS);
   }
-  return json({ ok: false, error: "Use POST to upload a file" }, 405, corsOrigin);
+  return jsonCors(
+    request,
+    { ok: false, error: "Use POST to upload a file" },
+    405,
+    METHODS,
+  );
 }
 
 export async function action({ request }) {
-  const corsOrigin = getCorsOrigin(request);
   if (request.method === "OPTIONS") {
-    return json({ ok: true }, 204, corsOrigin);
+    return optionsCors(request, METHODS);
   }
   if (request.method !== "POST") {
-    return json({ ok: false, error: "Method not allowed" }, 405, corsOrigin);
+    return jsonCors(
+      request,
+      { ok: false, error: "Method not allowed" },
+      405,
+      METHODS,
+    );
   }
 
   try {
     return await handleUpload(request);
   } catch (error) {
-    return json(
+    return jsonCors(
+      request,
       { ok: false, error: error.message || "Upload failed" },
       500,
-      corsOrigin,
+      METHODS,
     );
   }
 }
