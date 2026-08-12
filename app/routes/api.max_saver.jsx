@@ -1,5 +1,5 @@
-import prisma from "../db.server";
 import { jsonCors, optionsCors } from "../cors.server";
+import { getOfflineSession, shopifyGraphql } from "../shopify-api.server";
 
 const METHODS = "GET, OPTIONS";
 
@@ -32,91 +32,6 @@ function fieldMap(fields = []) {
     map[field.key] = field;
   }
   return map;
-}
-
-async function shopifyGraphql(shop, accessToken, query, variables) {
-  let res = await fetch(`https://${shop}/admin/api/2026-01/graphql.json`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": accessToken,
-    },
-    body: JSON.stringify({ query, variables }),
-  });
-
-  if (res.status === 401) {
-    const session = await prisma.session.findFirst({
-      where: { shop, isOnline: false },
-    });
-    if (!session?.refreshToken) {
-      throw new Error("Unauthorized and no refresh token available");
-    }
-    const newToken = await refreshOfflineToken(session);
-    res = await fetch(`https://${shop}/admin/api/2026-01/graphql.json`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Shopify-Access-Token": newToken,
-      },
-      body: JSON.stringify({ query, variables }),
-    });
-    accessToken = newToken;
-  }
-
-  const data = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    throw new Error(
-      data?.errors?.[0]?.message || `Shopify API error (${res.status})`,
-    );
-  }
-
-  if (Array.isArray(data?.errors) && data.errors.length > 0) {
-    throw new Error(data.errors[0]?.message || "Shopify GraphQL error");
-  }
-
-  return { data, accessToken };
-}
-
-async function refreshOfflineToken(session) {
-  const response = await fetch(
-    `https://${session.shop}/admin/oauth/access_token`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        client_id: process.env.SHOPIFY_API_KEY,
-        client_secret: process.env.SHOPIFY_API_SECRET,
-        grant_type: "refresh_token",
-        refresh_token: session.refreshToken,
-      }),
-    },
-  );
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(`Token refresh failed: ${JSON.stringify(data)}`);
-  }
-
-  const expiresAt = new Date(Date.now() + data.expires_in * 1000);
-  const refreshExpiresAt = data.refresh_token_expires_in
-    ? new Date(Date.now() + data.refresh_token_expires_in * 1000)
-    : null;
-
-  await prisma.session.update({
-    where: { id: session.id },
-    data: {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token || session.refreshToken,
-      expires: expiresAt,
-      refreshTokenExpires: refreshExpiresAt || session.refreshTokenExpires,
-    },
-  });
-
-  return data.access_token;
 }
 
 const MAX_SAVER_QUERY = `#graphql
@@ -365,11 +280,8 @@ async function handleMaxSaver(request) {
     return jsonCors(request, { ok: false, error: "Missing shop" }, 400, METHODS);
   }
 
-  const session = await prisma.session.findFirst({
-    where: { shop, isOnline: false },
-  });
-
-  if (!session?.accessToken) {
+  const offline = await getOfflineSession(shop);
+  if (!offline) {
     return jsonCors(
       request,
       { ok: false, error: "Offline token not found" },
@@ -378,13 +290,7 @@ async function handleMaxSaver(request) {
     );
   }
 
-  let accessToken = session.accessToken;
-  if (
-    session.expires &&
-    new Date(session.expires).getTime() < Date.now() + 5 * 60 * 1000
-  ) {
-    accessToken = await refreshOfflineToken(session);
-  }
+  let accessToken = offline.accessToken;
 
   const { data, accessToken: token } = await shopifyGraphql(
     shop,
