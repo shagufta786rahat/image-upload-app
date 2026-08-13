@@ -33,3 +33,10 @@ model Session {
   collaborator          Boolean?  @default(false)
   emailVerified         Boolean?  @default(false)
 }
+
+model Wishlist {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId  
+  customerId String
+  productHandle     String
+  createdAt  DateTime @default(now())
+}
