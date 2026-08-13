@@ -1,8 +1,10 @@
 import { Fragment, useState } from "react";
-import { useLoaderData, useRouteError } from "react-router";
+import { useLoaderData, useSearchParams, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+
+const PAGE_SIZE = 50;
 
 const PRODUCTS_QUERY = `#graphql
   query WishlistProducts($query: String!) {
@@ -62,9 +64,35 @@ async function graphqlJson(admin, query, variables) {
 
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
+  const url = new URL(request.url);
+  const requestedPage = Math.max(
+    1,
+    parseInt(url.searchParams.get("page") || "1", 10) || 1,
+  );
 
-  const wishlistEntries = await db.wishlist.findMany();
-  if (wishlistEntries.length === 0) return { customers: [] };
+  const total = await db.wishlist.count();
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const page = Math.min(requestedPage, totalPages);
+
+  const emptyPage = {
+    customers: [],
+    page,
+    total,
+    pageInfo: {
+      hasNextPage: false,
+      hasPreviousPage: false,
+    },
+  };
+
+  if (total === 0) return emptyPage;
+
+  const wishlistEntries = await db.wishlist.findMany({
+    skip: (page - 1) * PAGE_SIZE,
+    take: PAGE_SIZE,
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (wishlistEntries.length === 0) return emptyPage;
 
   const allHandles = [];
   const allCustomerIds = [];
@@ -140,12 +168,27 @@ export const loader = async ({ request }) => {
 
   return {
     customers: Object.values(customersMap),
+    page,
+    total,
+    pageInfo: {
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1,
+    },
   };
 };
 
 export default function WishlistPage() {
-  const { customers } = useLoaderData();
+  const { customers, page, total, pageInfo } = useLoaderData();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [openCustomer, setOpenCustomer] = useState(null);
+
+  const goToPage = (nextPage) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextPage <= 1) next.delete("page");
+    else next.set("page", String(nextPage));
+    setSearchParams(next);
+    setOpenCustomer(null);
+  };
 
   return (
     <s-page heading="All Customers Wishlist Dashboard">
@@ -157,6 +200,13 @@ export default function WishlistPage() {
 
       <s-section>
         <s-heading>Wishlist Data</s-heading>
+        {total > 0 ? (
+          <s-text color="subdued">
+            Showing {customers.length} of {total} customer
+            {total === 1 ? "" : "s"}
+            {total > PAGE_SIZE ? ` · Page ${page}` : ""}
+          </s-text>
+        ) : null}
 
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
@@ -228,6 +278,23 @@ export default function WishlistPage() {
             ))}
           </tbody>
         </table>
+
+        {pageInfo.hasPreviousPage || pageInfo.hasNextPage ? (
+          <s-stack direction="inline" gap="base">
+            <s-button
+              {...(!pageInfo.hasPreviousPage ? { disabled: true } : {})}
+              onClick={() => goToPage(page - 1)}
+            >
+              Previous
+            </s-button>
+            <s-button
+              {...(!pageInfo.hasNextPage ? { disabled: true } : {})}
+              onClick={() => goToPage(page + 1)}
+            >
+              Next
+            </s-button>
+          </s-stack>
+        ) : null}
       </s-section>
     </s-page>
   );
