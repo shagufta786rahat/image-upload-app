@@ -1,331 +1,389 @@
-import { useEffect } from "react";
-import { useFetcher } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { Fragment, useState } from "react";
+import { useLoaderData, useSearchParams, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
+import db from "../db.server";
+
+const PAGE_SIZE = 50;
+
+const PRODUCTS_QUERY = `#graphql
+  query WishlistProducts($query: String!) {
+    products(query: $query, first: 250) {
+      edges {
+        node {
+          id
+          title
+          handle
+          featuredImage {
+            url
+          }
+        }
+      }
+    }
+  }
+`;
+
+const CUSTOMERS_QUERY = `#graphql
+  query WishlistCustomers($ids: [ID!]!) {
+    nodes(ids: $ids) {
+      ... on Customer {
+        id
+        firstName
+        lastName
+        defaultEmailAddress {
+          emailAddress
+        }
+        defaultPhoneNumber {
+          phoneNumber
+        }
+      }
+    }
+  }
+`;
+
+function toCustomerGid(id) {
+  const raw = String(id || "").trim();
+  if (!raw) return "";
+  return raw.startsWith("gid://") ? raw : `gid://shopify/Customer/${raw}`;
+}
+
+function toCustomerNumericId(id) {
+  return String(id || "").replace("gid://shopify/Customer/", "");
+}
+
+function parseHandles(productHandle) {
+  const raw = String(productHandle || "").trim();
+  if (!raw) return [];
+
+  if (raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map(String).map((h) => h.trim()).filter(Boolean);
+      }
+    } catch {
+      // fall through to comma-separated parsing
+    }
+  }
+
+  return raw.split(",").map((h) => h.trim()).filter(Boolean);
+}
+
+function chunk(items, size) {
+  const groups = [];
+  for (let i = 0; i < items.length; i += size) {
+    groups.push(items.slice(i, i + size));
+  }
+  return groups;
+}
+
+async function graphqlJson(admin, query, variables) {
+  const response = await admin.graphql(query, { variables });
+  const json = await response.json();
+  if (json.errors?.length) {
+    console.error("Wishlist GraphQL errors:", json.errors);
+  }
+  return json.data || null;
+}
+
+function emptyPayload(page = 1, total = 0, error = null) {
+  return {
+    customers: [],
+    page,
+    total,
+    error,
+    pageInfo: {
+      hasNextPage: false,
+      hasPreviousPage: false,
+    },
+  };
+}
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
-
-  return null;
-};
-
-export const action = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-            demoInfo: metafield(namespace: "$app", key: "demo_info") {
-              jsonValue
-            }
-          }
-        }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-          metafields: [
-            {
-              namespace: "$app",
-              key: "demo_info",
-              value: "Created by React Router Template",
-            },
-          ],
-        },
-      },
-    },
+  const url = new URL(request.url);
+  const requestedPage = Math.max(
+    1,
+    parseInt(url.searchParams.get("page") || "1", 10) || 1,
   );
-  const responseJson = await response.json();
-  const product = responseJson.data.productCreate.product;
-  const variantId = product.variants.edges[0].node.id;
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
-      }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
-  const variantResponseJson = await variantResponse.json();
-  const metaobjectResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpsertMetaobject($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
-      metaobjectUpsert(handle: $handle, metaobject: $metaobject) {
-        metaobject {
-          id
-          handle
-          title: field(key: "title") {
-            jsonValue
-          }
-          description: field(key: "description") {
-            jsonValue
-          }
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }`,
-    {
-      variables: {
-        handle: {
-          type: "$app:example",
-          handle: "demo-entry",
-        },
-        metaobject: {
-          fields: [
-            { key: "title", value: "Demo Entry" },
-            {
-              key: "description",
-              value:
-                "This metaobject was created by the Shopify app template to demonstrate the metaobject API.",
-            },
-          ],
-        },
-      },
-    },
-  );
-  const metaobjectResponseJson = await metaobjectResponse.json();
 
-  return {
-    product: responseJson.data.productCreate.product,
-    variant: variantResponseJson.data.productVariantsBulkUpdate.productVariants,
-    metaobject: metaobjectResponseJson.data.metaobjectUpsert.metaobject,
-  };
+  try {
+    const total = await db.wishlist.count();
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE) || 1);
+    const page = Math.min(requestedPage, totalPages);
+
+    if (total === 0) return emptyPayload(page, total);
+
+    const wishlistEntries = await db.wishlist.findMany({
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+
+    if (wishlistEntries.length === 0) return emptyPayload(page, total);
+
+    const allHandles = [];
+    const allCustomerIds = [];
+
+    wishlistEntries.forEach((item) => {
+      allCustomerIds.push(item.customerId);
+      allHandles.push(...parseHandles(item.productHandle));
+    });
+
+    const handles = [...new Set(allHandles)];
+    const customerIds = [...new Set(allCustomerIds.filter(Boolean))];
+
+    const products = [];
+    for (const group of chunk(handles, 40)) {
+      const productSearch = group.map((h) => `handle:${h}`).join(" OR ");
+      const productData = await graphqlJson(admin, PRODUCTS_QUERY, {
+        query: productSearch,
+      });
+      products.push(
+        ...(productData?.products?.edges?.map((e) => e.node) || []),
+      );
+    }
+
+    const customerMap = {};
+    if (customerIds.length > 0) {
+      const customerData = await graphqlJson(admin, CUSTOMERS_QUERY, {
+        ids: customerIds.map(toCustomerGid).filter(Boolean),
+      });
+
+      (customerData?.nodes || []).forEach((node) => {
+        if (!node?.id) return;
+        const customer = {
+          id: node.id,
+          firstName: node.firstName,
+          lastName: node.lastName,
+          email: node.defaultEmailAddress?.emailAddress || "",
+          phone: node.defaultPhoneNumber?.phoneNumber || "",
+        };
+        customerMap[toCustomerNumericId(node.id)] = customer;
+        customerMap[node.id] = customer;
+      });
+    }
+
+    const customersMap = {};
+
+    wishlistEntries.forEach((item) => {
+      const c = customerMap[item.customerId] || {};
+      const itemHandles = parseHandles(item.productHandle);
+      const matchedProducts = products.filter((p) =>
+        itemHandles.includes(p.handle),
+      );
+
+      if (!customersMap[item.customerId]) {
+        customersMap[item.customerId] = {
+          customerId: item.customerId,
+          name: `${c.firstName || ""} ${c.lastName || ""}`.trim() || "—",
+          email: c.email || "—",
+          phone: c.phone || "—",
+          createdAt: item.createdAt
+            ? new Date(item.createdAt).toISOString()
+            : null,
+          items: [],
+        };
+      }
+
+      customersMap[item.customerId].items.push(...matchedProducts);
+    });
+
+    return {
+      customers: Object.values(customersMap),
+      page,
+      total,
+      error: null,
+      pageInfo: {
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
+    };
+  } catch (error) {
+    console.error("Wishlist loader error:", error);
+    return emptyPayload(1, 0, error?.message || "Failed to load wishlist");
+  }
 };
 
 export default function Index() {
-  const fetcher = useFetcher();
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
+  const { customers, page, total, pageInfo, error } = useLoaderData();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [openCustomer, setOpenCustomer] = useState(null);
 
-  useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
-    }
-  }, [fetcher.data?.product?.id, shopify]);
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+  const goToPage = (nextPage) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextPage <= 1) next.delete("page");
+    else next.set("page", String(nextPage));
+    setSearchParams(next);
+    setOpenCustomer(null);
+  };
 
   return (
-    <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generateProduct}>
-        Generate a product
-      </s-button>
+    <s-page heading="All Customers Wishlist Dashboard">
+      {error ? (
+        <s-section>
+          <s-banner tone="critical">{error}</s-banner>
+        </s-section>
+      ) : null}
 
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
-      </s-section>
-      <s-section heading="Get started with products">
-        <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references. Includes a product{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data/metafields"
-            target="_blank"
-          >
-            metafield
-          </s-link>{" "}
-          and{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data/metaobjects"
-            target="_blank"
-          >
-            metaobject
-          </s-link>
-          .
-        </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
-          >
-            Generate a product
-          </s-button>
-          {fetcher.data?.product && (
+      {customers.length === 0 && !error && (
+        <s-section>
+          <s-text>No wishlist records found.</s-text>
+        </s-section>
+      )}
+
+      <s-section>
+        <s-heading>Wishlist Data</s-heading>
+        {total > 0 ? (
+          <s-text color="subdued">
+            Showing {customers.length} of {total} customer
+            {total === 1 ? "" : "s"}
+            {total > PAGE_SIZE ? ` · Page ${page}` : ""}
+          </s-text>
+        ) : null}
+
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={th}>Customer ID</th>
+              <th style={th}>Name</th>
+              <th style={th}>Email</th>
+              <th style={th}>Phone</th>
+              <th style={th}>Date</th>
+              <th style={th}>Product IDs</th>
+              <th style={th}>Action</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {customers.map((customer) => (
+              <Fragment key={customer.customerId}>
+                <tr>
+                  <td style={td}>{customer.customerId}</td>
+                  <td style={td}>{customer.name}</td>
+                  <td style={td}>{customer.email}</td>
+                  <td style={td}>{customer.phone}</td>
+
+                  <td style={td}>
+                    {customer.createdAt
+                      ? new Date(customer.createdAt).toLocaleString()
+                      : "—"}
+                  </td>
+
+                  <td style={td}>
+                    {customer.items
+                      .map((p) => p.id.replace("gid://shopify/Product/", ""))
+                      .join(", ")}
+                  </td>
+
+                  <td style={td}>
+                    <button
+                      onClick={() =>
+                        setOpenCustomer(
+                          openCustomer === customer.customerId
+                            ? null
+                            : customer.customerId,
+                        )
+                      }
+                      style={buttonStyle}
+                    >
+                      View Products
+                    </button>
+                  </td>
+                </tr>
+
+                {openCustomer === customer.customerId && (
+                  <tr>
+                    <td colSpan={7} style={{ padding: "15px" }}>
+                      <div style={productGrid}>
+                        {customer.items.map((prod) => (
+                          <div key={prod.id} style={productCard}>
+                            <img
+                              src={prod.featuredImage?.url}
+                              alt={prod.title}
+                              style={productImg}
+                            />
+                            <p style={prodTitle}>{prod.title}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+
+        {pageInfo.hasPreviousPage || pageInfo.hasNextPage ? (
+          <s-stack direction="inline" gap="base">
             <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
+              {...(!pageInfo.hasPreviousPage ? { disabled: true } : {})}
+              onClick={() => goToPage(page - 1)}
             >
-              Edit product
+              Previous
             </s-button>
-          )}
-        </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
-            <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>metaobjectUpsert mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>
-                    {JSON.stringify(fetcher.data.metaobject, null, 2)}
-                  </code>
-                </pre>
-              </s-box>
-            </s-stack>
-          </s-section>
-        )}
-      </s-section>
-
-      <s-section slot="aside" heading="App template specs">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Custom data: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data"
-            target="_blank"
-          >
-            Metafields &amp; metaobjects
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
-      </s-section>
-
-      <s-section slot="aside" heading="Next steps">
-        <s-unordered-list>
-          <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
+            <s-button
+              {...(!pageInfo.hasNextPage ? { disabled: true } : {})}
+              onClick={() => goToPage(page + 1)}
             >
-              example app
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
-            </s-link>
-          </s-list-item>
-        </s-unordered-list>
+              Next
+            </s-button>
+          </s-stack>
+        ) : null}
       </s-section>
     </s-page>
   );
 }
 
+export function ErrorBoundary() {
+  return boundary.error(useRouteError());
+}
+
 export const headers = (headersArgs) => {
   return boundary.headers(headersArgs);
+};
+
+const th = {
+  textAlign: "left",
+  padding: "10px",
+  borderBottom: "1px solid #ddd",
+};
+
+const td = {
+  padding: "10px",
+  borderBottom: "1px solid #eee",
+};
+
+const buttonStyle = {
+  padding: "6px 12px",
+  background: "#000",
+  color: "#fff",
+  border: "none",
+  borderRadius: "6px",
+  cursor: "pointer",
+};
+
+const productGrid = {
+  display: "flex",
+  gap: "20px",
+  flexWrap: "wrap",
+};
+
+const productCard = {
+  width: "180px",
+  padding: "10px",
+  border: "1px solid #ddd",
+  borderRadius: "8px",
+  textAlign: "center",
+};
+
+const productImg = {
+  width: "100%",
+  borderRadius: "6px",
+};
+
+const prodTitle = {
+  fontWeight: "bold",
+  marginTop: "10px",
 };
