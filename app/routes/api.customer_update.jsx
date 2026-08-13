@@ -24,9 +24,15 @@ const CUSTOMER_FIELDS_FRAGMENT = `
   updatedAt
   defaultEmailAddress {
     emailAddress
+    marketingState
+    marketingOptInLevel
+    marketingUpdatedAt
   }
   defaultPhoneNumber {
     phoneNumber
+    marketingState
+    marketingOptInLevel
+    marketingUpdatedAt
   }
   dateOfBirth: metafield(namespace: "${METAFIELD_NAMESPACE}", key: "date_of_birth") {
     value
@@ -115,6 +121,16 @@ function getProfilePictureUrl(metafield) {
   return metafield.reference.image?.url || metafield.reference.url || "";
 }
 
+function formatMarketing(contact) {
+  const marketingState = contact?.marketingState || "NOT_SUBSCRIBED";
+  return {
+    enabled: marketingState === "SUBSCRIBED",
+    marketingState,
+    marketingOptInLevel: contact?.marketingOptInLevel || "",
+    consentUpdatedAt: contact?.marketingUpdatedAt || null,
+  };
+}
+
 function formatCustomer(customer) {
   if (!customer) return null;
   return {
@@ -124,6 +140,8 @@ function formatCustomer(customer) {
     updatedAt: customer.updatedAt || null,
     email: customer.defaultEmailAddress?.emailAddress || "",
     phone: customer.defaultPhoneNumber?.phoneNumber || "",
+    emailMarketing: formatMarketing(customer.defaultEmailAddress),
+    smsMarketing: formatMarketing(customer.defaultPhoneNumber),
     customDetails: {
       dateOfBirth: customer.dateOfBirth?.value || "",
       gender: customer.gender?.value || "",

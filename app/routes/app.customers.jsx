@@ -39,9 +39,15 @@ const CUSTOMERS_QUERY = `#graphql
           updatedAt
           defaultEmailAddress {
             emailAddress
+            marketingState
+            marketingOptInLevel
+            marketingUpdatedAt
           }
           defaultPhoneNumber {
             phoneNumber
+            marketingState
+            marketingOptInLevel
+            marketingUpdatedAt
           }
           dateOfBirth: metafield(namespace: "${METAFIELD_NAMESPACE}", key: "date_of_birth") {
             value
@@ -105,9 +111,34 @@ function buildCustomerSearchQuery(raw) {
   ].join(" OR ");
 }
 
+function formatMarketing(contact) {
+  const marketingState = contact?.marketingState || "NOT_SUBSCRIBED";
+  return {
+    enabled: marketingState === "SUBSCRIBED",
+    marketingState,
+    marketingOptInLevel: contact?.marketingOptInLevel || "",
+    consentUpdatedAt: contact?.marketingUpdatedAt || null,
+  };
+}
+
+function marketingLabel(state) {
+  if (state === "SUBSCRIBED") return "On";
+  if (state === "PENDING") return "Pending";
+  if (state === "UNSUBSCRIBED") return "Off";
+  return "Off";
+}
+
+function marketingTone(state) {
+  if (state === "SUBSCRIBED") return "success";
+  if (state === "PENDING") return "caution";
+  return undefined;
+}
+
 function formatCustomer(node) {
   const profileRef = node.profilePicture?.reference;
   const profileUrl = profileRef?.image?.url || profileRef?.url || "";
+  const emailMarketing = formatMarketing(node.defaultEmailAddress);
+  const smsMarketing = formatMarketing(node.defaultPhoneNumber);
   return {
     id: node.id,
     firstName: node.firstName || "",
@@ -116,6 +147,8 @@ function formatCustomer(node) {
     updatedAt: node.updatedAt || null,
     email: node.defaultEmailAddress?.emailAddress || "",
     phone: node.defaultPhoneNumber?.phoneNumber || "",
+    emailMarketing,
+    smsMarketing,
     customDetails: {
       dateOfBirth: node.dateOfBirth?.value || "",
       gender: node.gender?.value || "",
@@ -148,6 +181,15 @@ function DetailRow({ label, value }) {
       <s-text color="subdued">{label}</s-text>
       <s-text>{value || "—"}</s-text>
     </s-grid>
+  );
+}
+
+function MarketingBadge({ channel, state }) {
+  const tone = marketingTone(state);
+  return (
+    <s-badge {...(tone ? { tone } : {})}>
+      {channel} {marketingLabel(state)}
+    </s-badge>
   );
 }
 
@@ -235,8 +277,8 @@ export default function CustomersPage() {
       <s-section heading="All customers">
         <s-stack direction="block" gap="base">
           <s-paragraph>
-            Search by name, email, or phone. Click a row to expand profile and
-            custom metafield details.
+            Search by name, email, or phone. Click a row to expand profile,
+            marketing consent, and custom metafield details.
           </s-paragraph>
 
           <s-grid
@@ -352,6 +394,14 @@ export default function CustomersPage() {
                             gap="small"
                             alignItems="center"
                           >
+                            <MarketingBadge
+                              channel="Email"
+                              state={customer.emailMarketing.marketingState}
+                            />
+                            <MarketingBadge
+                              channel="SMS"
+                              state={customer.smsMarketing.marketingState}
+                            />
                             <s-text color="subdued">
                               {formatDate(customer.updatedAt)}
                             </s-text>
@@ -389,6 +439,20 @@ export default function CustomersPage() {
                               <DetailRow
                                 label="Customer ID"
                                 value={customer.id}
+                              />
+                            </s-stack>
+
+                            <s-divider />
+
+                            <s-stack direction="block" gap="small">
+                              <s-heading>Notifications</s-heading>
+                              <DetailRow
+                                label="Email updates"
+                                value={`${marketingLabel(customer.emailMarketing.marketingState)}${customer.email ? ` · ${customer.email}` : ""}`}
+                              />
+                              <DetailRow
+                                label="Phone SMS updates"
+                                value={`${marketingLabel(customer.smsMarketing.marketingState)}${customer.phone ? ` · ${customer.phone}` : ""}`}
                               />
                             </s-stack>
 
