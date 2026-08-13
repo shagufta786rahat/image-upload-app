@@ -1,10 +1,10 @@
-import { Fragment, useState } from "react";
+import { useMemo, useState } from "react";
 import { useLoaderData, useSearchParams, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 25;
 
 const PRODUCTS_QUERY = `#graphql
   query WishlistProducts($query: String!) {
@@ -86,6 +86,66 @@ async function graphqlJson(admin, query, variables) {
   return json.data || null;
 }
 
+function wishlistModel() {
+  return db.wishlist || db.Wishlist || null;
+}
+
+function mapRawWishlistDoc(doc) {
+  return {
+    id: String(doc._id || doc.id || ""),
+    customerId: doc.customerId,
+    productHandle: doc.productHandle,
+    createdAt: doc.createdAt,
+  };
+}
+
+async function countWishlists() {
+  const model = wishlistModel();
+  if (model?.count) return model.count();
+
+  for (const collection of ["Wishlist", "wishlist"]) {
+    try {
+      const result = await db.$runCommandRaw({
+        count: collection,
+        query: {},
+      });
+      if (typeof result?.n === "number") return result.n;
+    } catch (error) {
+      console.error(`Wishlist count failed for ${collection}:`, error);
+    }
+  }
+
+  throw new Error("WISHLIST_UNAVAILABLE");
+}
+
+async function findWishlists({ skip, take }) {
+  const model = wishlistModel();
+  if (model?.findMany) {
+    return model.findMany({
+      skip,
+      take,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+  }
+
+  for (const collection of ["Wishlist", "wishlist"]) {
+    try {
+      const result = await db.$runCommandRaw({
+        find: collection,
+        sort: { createdAt: -1, _id: -1 },
+        skip,
+        limit: take,
+      });
+      const docs = result?.cursor?.firstBatch;
+      if (Array.isArray(docs)) return docs.map(mapRawWishlistDoc);
+    } catch (error) {
+      console.error(`Wishlist find failed for ${collection}:`, error);
+    }
+  }
+
+  throw new Error("WISHLIST_UNAVAILABLE");
+}
+
 function emptyPayload(page = 1, total = 0, error = null) {
   return {
     customers: [],
@@ -99,6 +159,41 @@ function emptyPayload(page = 1, total = 0, error = null) {
   };
 }
 
+function formatDate(value) {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return "—";
+  }
+}
+
+function initials(name) {
+  const parts = String(name || "")
+    .split(" ")
+    .filter(Boolean);
+  if (parts.length === 0) return "W";
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
+
+function matchesQuery(customer, rawQuery) {
+  const q = String(rawQuery || "").trim().toLowerCase();
+  if (!q) return true;
+  return [
+    customer.name,
+    customer.email,
+    customer.phone,
+    customer.customerId,
+    ...(customer.items || []).map((item) => item.title),
+  ]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(q));
+}
+
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
   const url = new URL(request.url);
@@ -108,16 +203,15 @@ export const loader = async ({ request }) => {
   );
 
   try {
-    const total = await db.wishlist.count();
+    const total = await countWishlists();
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE) || 1);
     const page = Math.min(requestedPage, totalPages);
 
     if (total === 0) return emptyPayload(page, total);
 
-    const wishlistEntries = await db.wishlist.findMany({
+    const wishlistEntries = await findWishlists({
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     });
 
     if (wishlistEntries.length === 0) return emptyPayload(page, total);
@@ -172,13 +266,21 @@ export const loader = async ({ request }) => {
       const matchedProducts = products.filter((p) =>
         itemHandles.includes(p.handle),
       );
+      const fallbackProducts = itemHandles
+        .filter((handle) => !matchedProducts.some((p) => p.handle === handle))
+        .map((handle) => ({
+          id: `handle:${handle}`,
+          title: handle,
+          handle,
+          featuredImage: null,
+        }));
 
       if (!customersMap[item.customerId]) {
         customersMap[item.customerId] = {
           customerId: item.customerId,
-          name: `${c.firstName || ""} ${c.lastName || ""}`.trim() || "—",
-          email: c.email || "—",
-          phone: c.phone || "—",
+          name: `${c.firstName || ""} ${c.lastName || ""}`.trim() || "Customer",
+          email: c.email || "",
+          phone: c.phone || "",
           createdAt: item.createdAt
             ? new Date(item.createdAt).toISOString()
             : null,
@@ -186,7 +288,10 @@ export const loader = async ({ request }) => {
         };
       }
 
-      customersMap[item.customerId].items.push(...matchedProducts);
+      customersMap[item.customerId].items.push(
+        ...matchedProducts,
+        ...fallbackProducts,
+      );
     });
 
     return {
@@ -201,136 +306,264 @@ export const loader = async ({ request }) => {
     };
   } catch (error) {
     console.error("Wishlist loader error:", error);
-    return emptyPayload(1, 0, error?.message || "Failed to load wishlist");
+    return emptyPayload(
+      1,
+      0,
+      "We couldn’t load wishlists right now. Please refresh and try again.",
+    );
   }
 };
 
 export default function Index() {
   const { customers, page, total, pageInfo, error } = useLoaderData();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [openCustomer, setOpenCustomer] = useState(null);
+  const [openId, setOpenId] = useState(null);
+  const [query, setQuery] = useState("");
+
+  const filtered = useMemo(
+    () => customers.filter((customer) => matchesQuery(customer, query)),
+    [customers, query],
+  );
 
   const goToPage = (nextPage) => {
     const next = new URLSearchParams(searchParams);
     if (nextPage <= 1) next.delete("page");
     else next.set("page", String(nextPage));
     setSearchParams(next);
-    setOpenCustomer(null);
+    setOpenId(null);
   };
 
+  const productCount = customers.reduce(
+    (sum, customer) => sum + (customer.items?.length || 0),
+    0,
+  );
+
   return (
-    <s-page heading="All Customers Wishlist Dashboard">
-      {error ? (
-        <s-section>
-          <s-banner tone="critical">{error}</s-banner>
-        </s-section>
-      ) : null}
+    <s-page heading="Wishlist">
+      <s-section heading="Saved by customers">
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            See which products customers saved. Click a row to preview the
+            wishlist.
+          </s-paragraph>
 
-      {customers.length === 0 && !error && (
-        <s-section>
-          <s-text>No wishlist records found.</s-text>
-        </s-section>
-      )}
+          {error ? (
+            <s-banner heading="Couldn’t load wishlists" tone="warning">
+              <s-stack direction="block" gap="small">
+                <s-paragraph>{error}</s-paragraph>
+                <s-button
+                  variant="secondary"
+                  onClick={() => window.location.reload()}
+                >
+                  Refresh
+                </s-button>
+              </s-stack>
+            </s-banner>
+          ) : null}
 
-      <s-section>
-        <s-heading>Wishlist Data</s-heading>
-        {total > 0 ? (
-          <s-text color="subdued">
-            Showing {customers.length} of {total} customer
-            {total === 1 ? "" : "s"}
-            {total > PAGE_SIZE ? ` · Page ${page}` : ""}
-          </s-text>
-        ) : null}
+          {total > 0 ? (
+            <s-grid
+              gridTemplateColumns="1fr auto"
+              gap="base"
+              alignItems="end"
+            >
+              <s-search-field
+                label="Search wishlists"
+                labelAccessibilityVisibility="exclusive"
+                value={query}
+                placeholder="Search by name, email, phone, or product"
+                autocomplete="off"
+                onInput={(event) => setQuery(event.currentTarget.value)}
+              />
+              <s-button
+                variant="tertiary"
+                {...(!query ? { disabled: true } : {})}
+                onClick={() => setQuery("")}
+              >
+                Clear
+              </s-button>
+            </s-grid>
+          ) : null}
 
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              <th style={th}>Customer ID</th>
-              <th style={th}>Name</th>
-              <th style={th}>Email</th>
-              <th style={th}>Phone</th>
-              <th style={th}>Date</th>
-              <th style={th}>Product IDs</th>
-              <th style={th}>Action</th>
-            </tr>
-          </thead>
+          {total > 0 ? (
+            <s-text color="subdued">
+              {total} customer{total === 1 ? "" : "s"} · {productCount} saved
+              product{productCount === 1 ? "" : "s"}
+              {total > PAGE_SIZE ? ` · Page ${page}` : ""}
+            </s-text>
+          ) : null}
 
-          <tbody>
-            {customers.map((customer) => (
-              <Fragment key={customer.customerId}>
-                <tr>
-                  <td style={td}>{customer.customerId}</td>
-                  <td style={td}>{customer.name}</td>
-                  <td style={td}>{customer.email}</td>
-                  <td style={td}>{customer.phone}</td>
+          {customers.length === 0 && !error ? (
+            <s-box padding="base" border="base" borderRadius="base">
+              <s-grid gap="base" justifyItems="center" paddingBlock="large-400">
+                <s-box maxInlineSize="200px">
+                  <s-image
+                    aspectRatio="1/0.5"
+                    src="https://cdn.shopify.com/static/images/polaris/patterns/callout.png"
+                    alt="Empty wishlist illustration"
+                  />
+                </s-box>
+                <s-stack alignItems="center">
+                  <s-heading>No wishlists yet</s-heading>
+                  <s-paragraph>
+                    When customers save products on the storefront, they will
+                    show up here.
+                  </s-paragraph>
+                </s-stack>
+              </s-grid>
+            </s-box>
+          ) : null}
 
-                  <td style={td}>
-                    {customer.createdAt
-                      ? new Date(customer.createdAt).toLocaleString()
-                      : "—"}
-                  </td>
+          {customers.length > 0 && filtered.length === 0 ? (
+            <s-box padding="base" border="base" borderRadius="base">
+              <s-stack direction="block" gap="small">
+                <s-paragraph>
+                  No customers matched “{query}”.
+                </s-paragraph>
+                <s-button variant="secondary" onClick={() => setQuery("")}>
+                  Clear search
+                </s-button>
+              </s-stack>
+            </s-box>
+          ) : null}
 
-                  <td style={td}>
-                    {customer.items
-                      .map((p) => p.id.replace("gid://shopify/Product/", ""))
-                      .join(", ")}
-                  </td>
+          {filtered.length > 0 ? (
+            <s-box border="base" borderRadius="base" overflow="hidden">
+              {filtered.map((customer, index) => {
+                const isOpen = openId === customer.customerId;
+                const subtitle = [customer.email, customer.phone]
+                  .filter(Boolean)
+                  .join(" · ");
+                const count = customer.items.length;
 
-                  <td style={td}>
-                    <button
+                return (
+                  <s-stack
+                    key={customer.customerId}
+                    direction="block"
+                    gap="none"
+                  >
+                    {index > 0 ? (
+                      <s-box paddingInline="base">
+                        <s-divider />
+                      </s-box>
+                    ) : null}
+
+                    <s-clickable
+                      padding="base"
+                      accessibilityLabel={`${isOpen ? "Collapse" : "Expand"} wishlist for ${customer.name}`}
                       onClick={() =>
-                        setOpenCustomer(
-                          openCustomer === customer.customerId
-                            ? null
-                            : customer.customerId,
-                        )
+                        setOpenId(isOpen ? null : customer.customerId)
                       }
-                      style={buttonStyle}
                     >
-                      View Products
-                    </button>
-                  </td>
-                </tr>
+                      <s-grid
+                        gridTemplateColumns="auto 1fr auto"
+                        gap="base"
+                        alignItems="center"
+                      >
+                        <s-avatar initials={initials(customer.name)} />
+                        <s-stack direction="block" gap="none">
+                          <s-heading>{customer.name}</s-heading>
+                          <s-paragraph color="subdued">
+                            {subtitle || "No email / phone"}
+                          </s-paragraph>
+                        </s-stack>
+                        <s-stack
+                          direction="inline"
+                          gap="small"
+                          alignItems="center"
+                        >
+                          <s-badge>
+                            {count} product{count === 1 ? "" : "s"}
+                          </s-badge>
+                          <s-text color="subdued">
+                            {formatDate(customer.createdAt)}
+                          </s-text>
+                          <s-icon
+                            type={isOpen ? "chevron-up" : "chevron-down"}
+                          />
+                        </s-stack>
+                      </s-grid>
+                    </s-clickable>
 
-                {openCustomer === customer.customerId && (
-                  <tr>
-                    <td colSpan={7} style={{ padding: "15px" }}>
-                      <div style={productGrid}>
-                        {customer.items.map((prod) => (
-                          <div key={prod.id} style={productCard}>
-                            <img
-                              src={prod.featuredImage?.url}
-                              alt={prod.title}
-                              style={productImg}
-                            />
-                            <p style={prodTitle}>{prod.title}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+                    {isOpen ? (
+                      <s-box
+                        padding="base"
+                        background="subdued"
+                        borderStyle="solid none none none"
+                        border="base"
+                      >
+                        <s-stack direction="block" gap="base">
+                          <s-heading>Wishlist products</s-heading>
+                          {customer.items.length === 0 ? (
+                            <s-paragraph>
+                              This customer has no saved products.
+                            </s-paragraph>
+                          ) : (
+                            <s-grid
+                              gridTemplateColumns="repeat(auto-fill, minmax(160px, 1fr))"
+                              gap="base"
+                            >
+                              {customer.items.map((prod) => (
+                                <s-box
+                                  key={prod.id}
+                                  padding="small"
+                                  background="base"
+                                  border="base"
+                                  borderRadius="base"
+                                >
+                                  <s-stack direction="block" gap="small">
+                                    {prod.featuredImage?.url ? (
+                                      <s-thumbnail
+                                        size="large"
+                                        src={prod.featuredImage.url}
+                                        alt={prod.title}
+                                      />
+                                    ) : (
+                                      <s-box
+                                        padding="base"
+                                        background="subdued"
+                                        borderRadius="base"
+                                      >
+                                        <s-text color="subdued">
+                                          No image
+                                        </s-text>
+                                      </s-box>
+                                    )}
+                                    <s-text>{prod.title}</s-text>
+                                  </s-stack>
+                                </s-box>
+                              ))}
+                            </s-grid>
+                          )}
+                          <s-text color="subdued">
+                            Customer ID: {customer.customerId}
+                          </s-text>
+                        </s-stack>
+                      </s-box>
+                    ) : null}
+                  </s-stack>
+                );
+              })}
+            </s-box>
+          ) : null}
 
-        {pageInfo.hasPreviousPage || pageInfo.hasNextPage ? (
-          <s-stack direction="inline" gap="base">
-            <s-button
-              {...(!pageInfo.hasPreviousPage ? { disabled: true } : {})}
-              onClick={() => goToPage(page - 1)}
-            >
-              Previous
-            </s-button>
-            <s-button
-              {...(!pageInfo.hasNextPage ? { disabled: true } : {})}
-              onClick={() => goToPage(page + 1)}
-            >
-              Next
-            </s-button>
-          </s-stack>
-        ) : null}
+          {pageInfo.hasPreviousPage || pageInfo.hasNextPage ? (
+            <s-stack direction="inline" gap="base">
+              <s-button
+                {...(!pageInfo.hasPreviousPage ? { disabled: true } : {})}
+                onClick={() => goToPage(page - 1)}
+              >
+                Previous
+              </s-button>
+              <s-button
+                {...(!pageInfo.hasNextPage ? { disabled: true } : {})}
+                onClick={() => goToPage(page + 1)}
+              >
+                Next
+              </s-button>
+            </s-stack>
+          ) : null}
+        </s-stack>
       </s-section>
     </s-page>
   );
@@ -342,48 +575,4 @@ export function ErrorBoundary() {
 
 export const headers = (headersArgs) => {
   return boundary.headers(headersArgs);
-};
-
-const th = {
-  textAlign: "left",
-  padding: "10px",
-  borderBottom: "1px solid #ddd",
-};
-
-const td = {
-  padding: "10px",
-  borderBottom: "1px solid #eee",
-};
-
-const buttonStyle = {
-  padding: "6px 12px",
-  background: "#000",
-  color: "#fff",
-  border: "none",
-  borderRadius: "6px",
-  cursor: "pointer",
-};
-
-const productGrid = {
-  display: "flex",
-  gap: "20px",
-  flexWrap: "wrap",
-};
-
-const productCard = {
-  width: "180px",
-  padding: "10px",
-  border: "1px solid #ddd",
-  borderRadius: "8px",
-  textAlign: "center",
-};
-
-const productImg = {
-  width: "100%",
-  borderRadius: "6px",
-};
-
-const prodTitle = {
-  fontWeight: "bold",
-  marginTop: "10px",
 };
