@@ -1,91 +1,116 @@
-import { useLoaderData } from "react-router";
-import { useState } from "react";
+import { Fragment, useState } from "react";
+import { useLoaderData, useRouteError } from "react-router";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
+const PRODUCTS_QUERY = `#graphql
+  query WishlistProducts($query: String!) {
+    products(query: $query, first: 250) {
+      edges {
+        node {
+          id
+          title
+          handle
+          featuredImage {
+            url
+          }
+        }
+      }
+    }
+  }
+`;
 
-// ------------------------------------------------------
-// 1. LOADER — Fetch wishlist, products & customer details
-// ------------------------------------------------------
+const CUSTOMERS_QUERY = `#graphql
+  query WishlistCustomers($ids: [ID!]!) {
+    nodes(ids: $ids) {
+      ... on Customer {
+        id
+        firstName
+        lastName
+        defaultEmailAddress {
+          emailAddress
+        }
+        defaultPhoneNumber {
+          phoneNumber
+        }
+      }
+    }
+  }
+`;
+
+function toCustomerGid(id) {
+  const raw = String(id || "").trim();
+  if (!raw) return "";
+  return raw.startsWith("gid://") ? raw : `gid://shopify/Customer/${raw}`;
+}
+
+function toCustomerNumericId(id) {
+  return String(id || "").replace("gid://shopify/Customer/", "");
+}
+
+async function graphqlJson(admin, query, variables) {
+  const response = await admin.graphql(query, { variables });
+  const json = await response.json();
+  if (json.errors?.length) {
+    throw new Response(json.errors[0]?.message || "GraphQL error", {
+      status: 500,
+    });
+  }
+  return json.data;
+}
+
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
 
-  // Fetch all wishlist entries
   const wishlistEntries = await db.wishlist.findMany();
   if (wishlistEntries.length === 0) return { customers: [] };
 
-  let allHandles = [];
-  let allCustomerIds = [];
+  const allHandles = [];
+  const allCustomerIds = [];
 
   wishlistEntries.forEach((item) => {
     allCustomerIds.push(item.customerId);
 
-    const splitHandles = item.productHandle.split(",").map((h) => h.trim());
+    const splitHandles = String(item.productHandle || "")
+      .split(",")
+      .map((h) => h.trim())
+      .filter(Boolean);
     allHandles.push(...splitHandles);
   });
 
   const handles = [...new Set(allHandles)];
-  const customerIds = [...new Set(allCustomerIds)];
+  const customerIds = [...new Set(allCustomerIds.filter(Boolean))];
 
-  // ------------------------------------------------------
-  // Fetch Products from Shopify
-  // ------------------------------------------------------
-  const productSearch = handles.map((h) => `handle:${h}`).join(" OR ");
+  let products = [];
+  if (handles.length > 0) {
+    const productSearch = handles.map((h) => `handle:${h}`).join(" OR ");
+    const productData = await graphqlJson(admin, PRODUCTS_QUERY, {
+      query: productSearch,
+    });
+    products = productData?.products?.edges?.map((e) => e.node) || [];
+  }
 
-  const productQuery = `
-    query {
-      products(query: "${productSearch}", first: 250) {
-        edges {
-          node {
-            id
-            title
-            handle
-            featuredImage { url }
-          }
-        }
-      }
-    }
-  `;
-
-  const productRes = await admin.graphql(productQuery);
-  const productJson = await productRes.json();
-  const products = productJson.data.products.edges.map((e) => e.node);
-
-
-  // ------------------------------------------------------
-  // Fetch Customer Details from Shopify
-  // ------------------------------------------------------
-  const customerQuery = `
-    query {
-      customers(first: 250, query: "${customerIds
-        .map((id) => `id:${id}`)
-        .join(" OR ")}") {
-        edges {
-          node {
-            id
-            email
-            phone
-            firstName
-            lastName
-          }
-        }
-      }
-    }
-  `;
-
-  const customerRes = await admin.graphql(customerQuery);
-  const customerJson = await customerRes.json();
-
-  // Map: "12345" → { customerData }
   const customerMap = {};
-  customerJson.data.customers.edges.forEach((c) => {
-    customerMap[c.node.id.replace("gid://shopify/Customer/", "")] = c.node;
-  });
+  if (customerIds.length > 0) {
+    const customerData = await graphqlJson(admin, CUSTOMERS_QUERY, {
+      ids: customerIds.map(toCustomerGid),
+    });
 
+    (customerData?.nodes || []).forEach((node) => {
+      if (!node?.id) return;
+      const customer = {
+        id: node.id,
+        firstName: node.firstName,
+        lastName: node.lastName,
+        email: node.defaultEmailAddress?.emailAddress || "",
+        phone: node.defaultPhoneNumber?.phoneNumber || "",
+      };
+      customerMap[toCustomerNumericId(node.id)] = customer;
+      customerMap[node.id] = customer;
+    });
+  }
 
-  // ------------------------------------------------------
-  // Group wishlist by customer
-  // ------------------------------------------------------
   const customersMap = {};
 
   wishlistEntries.forEach((item) => {
@@ -102,9 +127,12 @@ export const loader = async ({ request }) => {
       };
     }
 
-    const itemHandles = item.productHandle.split(",").map((h) => h.trim());
+    const itemHandles = String(item.productHandle || "")
+      .split(",")
+      .map((h) => h.trim())
+      .filter(Boolean);
     const matchedProducts = products.filter((p) =>
-      itemHandles.includes(p.handle)
+      itemHandles.includes(p.handle),
     );
 
     customersMap[item.customerId].items.push(...matchedProducts);
@@ -115,12 +143,6 @@ export const loader = async ({ request }) => {
   };
 };
 
-
-
-
-// ------------------------------------------------------
-// 2. UI COMPONENT
-// ------------------------------------------------------
 export default function WishlistPage() {
   const { customers } = useLoaderData();
   const [openCustomer, setOpenCustomer] = useState(null);
@@ -151,8 +173,8 @@ export default function WishlistPage() {
 
           <tbody>
             {customers.map((customer) => (
-              <>
-                <tr key={customer.customerId}>
+              <Fragment key={customer.customerId}>
+                <tr>
                   <td style={td}>{customer.customerId}</td>
                   <td style={td}>{customer.name}</td>
                   <td style={td}>{customer.email}</td>
@@ -174,7 +196,7 @@ export default function WishlistPage() {
                         setOpenCustomer(
                           openCustomer === customer.customerId
                             ? null
-                            : customer.customerId
+                            : customer.customerId,
                         )
                       }
                       style={buttonStyle}
@@ -192,6 +214,7 @@ export default function WishlistPage() {
                           <div key={prod.id} style={productCard}>
                             <img
                               src={prod.featuredImage?.url}
+                              alt={prod.title}
                               style={productImg}
                             />
                             <p style={prodTitle}>{prod.title}</p>
@@ -201,7 +224,7 @@ export default function WishlistPage() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -210,11 +233,14 @@ export default function WishlistPage() {
   );
 }
 
+export function ErrorBoundary() {
+  return boundary.error(useRouteError());
+}
 
+export const headers = (headersArgs) => {
+  return boundary.headers(headersArgs);
+};
 
-// ------------------------------------------------------
-// 3. STYLES
-// ------------------------------------------------------
 const th = {
   textAlign: "left",
   padding: "10px",
