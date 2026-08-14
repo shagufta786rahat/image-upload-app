@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import { useLoaderData, useSearchParams, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
-import db from "../db.server";
+import {
+  countWishlists,
+  findWishlists,
+  parseHandles,
+  toIsoDate,
+} from "../wishlist.server";
 
 const PAGE_SIZE = 25;
 const FETCH_CAP = 500;
@@ -70,24 +75,6 @@ function customerIdVariants(id) {
   return [...new Set([raw, toCustomerNumericId(raw), toCustomerGid(raw)])];
 }
 
-function parseHandles(productHandle) {
-  const raw = String(productHandle || "").trim();
-  if (!raw) return [];
-
-  if (raw.startsWith("[")) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.map(String).map((h) => h.trim()).filter(Boolean);
-      }
-    } catch {
-      // fall through to comma-separated parsing
-    }
-  }
-
-  return raw.split(",").map((h) => h.trim()).filter(Boolean);
-}
-
 function chunk(items, size) {
   const groups = [];
   for (let i = 0; i < items.length; i += size) {
@@ -125,92 +112,17 @@ function buildCustomerSearchQuery(raw) {
 }
 
 async function graphqlJson(admin, query, variables) {
-  const response = await admin.graphql(query, { variables });
-  const json = await response.json();
-  if (json.errors?.length) {
-    console.error("Wishlist GraphQL errors:", json.errors);
-  }
-  return json.data || null;
-}
-
-function wishlistModel() {
-  return db.wishlist || db.Wishlist || null;
-}
-
-function mapRawWishlistDoc(doc) {
-  return {
-    id: String(doc._id || doc.id || ""),
-    customerId: doc.customerId,
-    productHandle: doc.productHandle,
-    createdAt: doc.createdAt,
-  };
-}
-
-function toMongoFilter(where = {}) {
-  const filter = {};
-  if (where.createdAt?.gte) {
-    filter.createdAt = { $gte: where.createdAt.gte };
-  }
-  if (where.productHandle?.contains) {
-    filter.productHandle = {
-      $regex: where.productHandle.contains,
-      $options: "i",
-    };
-  }
-  if (where.customerId?.in?.length) {
-    filter.customerId = { $in: where.customerId.in };
-  }
-  return filter;
-}
-
-async function countWishlists(where = {}) {
-  const model = wishlistModel();
-  if (model?.count) return model.count({ where });
-
-  for (const collection of ["Wishlist", "wishlist"]) {
-    try {
-      const result = await db.$runCommandRaw({
-        count: collection,
-        query: toMongoFilter(where),
-      });
-      if (typeof result?.n === "number") return result.n;
-    } catch (error) {
-      console.error(`Wishlist count failed for ${collection}:`, error);
+  try {
+    const response = await admin.graphql(query, { variables });
+    const json = await response.json();
+    if (json.errors?.length) {
+      console.error("Wishlist GraphQL errors:", json.errors);
     }
+    return json.data || null;
+  } catch (error) {
+    console.error("Wishlist GraphQL request failed:", error);
+    return null;
   }
-
-  throw new Error("WISHLIST_UNAVAILABLE");
-}
-
-async function findWishlists({ skip, take, where = {} } = {}) {
-  const model = wishlistModel();
-  if (model?.findMany) {
-    return model.findMany({
-      where,
-      ...(skip != null ? { skip } : {}),
-      ...(take != null ? { take } : {}),
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    });
-  }
-
-  for (const collection of ["Wishlist", "wishlist"]) {
-    try {
-      const command = {
-        find: collection,
-        filter: toMongoFilter(where),
-        sort: { createdAt: -1, _id: -1 },
-      };
-      if (skip) command.skip = skip;
-      if (take) command.limit = take;
-      const result = await db.$runCommandRaw(command);
-      const docs = result?.cursor?.firstBatch;
-      if (Array.isArray(docs)) return docs.map(mapRawWishlistDoc);
-    } catch (error) {
-      console.error(`Wishlist find failed for ${collection}:`, error);
-    }
-  }
-
-  throw new Error("WISHLIST_UNAVAILABLE");
 }
 
 function uniqueEntries(entries) {
@@ -311,84 +223,118 @@ async function searchCustomerIds(admin, q) {
     .flatMap(customerIdVariants);
 }
 
-async function enrichWishlists(admin, wishlistEntries) {
-  const allHandles = [];
-  const allCustomerIds = [];
-
-  wishlistEntries.forEach((item) => {
-    allCustomerIds.push(item.customerId);
-    allHandles.push(...parseHandles(item.productHandle));
-  });
-
-  const handles = [...new Set(allHandles)];
-  const customerIds = [...new Set(allCustomerIds.filter(Boolean))];
-
-  const products = [];
-  for (const group of chunk(handles, 40)) {
-    const productSearch = group.map((h) => `handle:${h}`).join(" OR ");
-    const productData = await graphqlJson(admin, PRODUCTS_QUERY, {
-      query: productSearch,
-    });
-    products.push(...(productData?.products?.edges?.map((e) => e.node) || []));
-  }
-
-  const customerMap = {};
-  if (customerIds.length > 0) {
-    const customerData = await graphqlJson(admin, CUSTOMERS_BY_IDS_QUERY, {
-      ids: customerIds.map(toCustomerGid).filter(Boolean),
-    });
-
-    (customerData?.nodes || []).forEach((node) => {
-      if (!node?.id) return;
-      const customer = {
-        id: node.id,
-        firstName: node.firstName,
-        lastName: node.lastName,
-        email: node.defaultEmailAddress?.emailAddress || "",
-        phone: node.defaultPhoneNumber?.phoneNumber || "",
-      };
-      customerMap[toCustomerNumericId(node.id)] = customer;
-      customerMap[node.id] = customer;
-    });
-  }
-
+function fallbackCustomers(wishlistEntries) {
   const customersMap = {};
-
-  wishlistEntries.forEach((item) => {
-    const c = customerMap[item.customerId] || {};
-    const itemHandles = parseHandles(item.productHandle);
-    const matchedProducts = products.filter((p) =>
-      itemHandles.includes(p.handle),
-    );
-    const fallbackProducts = itemHandles
-      .filter((handle) => !matchedProducts.some((p) => p.handle === handle))
-      .map((handle) => ({
+  (wishlistEntries || []).forEach((item) => {
+    if (!customersMap[item.customerId]) {
+      customersMap[item.customerId] = {
+        customerId: item.customerId,
+        name: "Customer",
+        email: "",
+        phone: "",
+        createdAt: toIsoDate(item.createdAt),
+        items: [],
+      };
+    }
+    customersMap[item.customerId].items.push(
+      ...parseHandles(item.productHandle).map((handle) => ({
         id: `handle:${handle}`,
         title: handle,
         handle,
         featuredImage: null,
-      }));
-
-    if (!customersMap[item.customerId]) {
-      customersMap[item.customerId] = {
-        customerId: item.customerId,
-        name: `${c.firstName || ""} ${c.lastName || ""}`.trim() || "Customer",
-        email: c.email || "",
-        phone: c.phone || "",
-        createdAt: item.createdAt
-          ? new Date(item.createdAt).toISOString()
-          : null,
-        items: [],
-      };
-    }
-
-    customersMap[item.customerId].items.push(
-      ...matchedProducts,
-      ...fallbackProducts,
+      })),
     );
   });
-
   return Object.values(customersMap);
+}
+
+async function enrichWishlists(admin, wishlistEntries) {
+  try {
+    const allHandles = [];
+    const allCustomerIds = [];
+
+    wishlistEntries.forEach((item) => {
+      allCustomerIds.push(item.customerId);
+      allHandles.push(...parseHandles(item.productHandle));
+    });
+
+    const handles = [...new Set(allHandles)];
+    const customerIds = [...new Set(allCustomerIds.filter(Boolean))];
+
+    const products = [];
+    for (const group of chunk(handles, 40)) {
+      const productSearch = group.map((h) => `handle:${h}`).join(" OR ");
+      const productData = await graphqlJson(admin, PRODUCTS_QUERY, {
+        query: productSearch,
+      });
+      products.push(
+        ...(productData?.products?.edges?.map((e) => e.node) || []),
+      );
+    }
+
+    const customerMap = {};
+    for (const group of chunk(
+      customerIds.map(toCustomerGid).filter(Boolean),
+      50,
+    )) {
+      const customerData = await graphqlJson(admin, CUSTOMERS_BY_IDS_QUERY, {
+        ids: group,
+      });
+
+      (customerData?.nodes || []).forEach((node) => {
+        if (!node?.id) return;
+        const customer = {
+          id: node.id,
+          firstName: node.firstName,
+          lastName: node.lastName,
+          email: node.defaultEmailAddress?.emailAddress || "",
+          phone: node.defaultPhoneNumber?.phoneNumber || "",
+        };
+        customerMap[toCustomerNumericId(node.id)] = customer;
+        customerMap[node.id] = customer;
+      });
+    }
+
+    const customersMap = {};
+
+    wishlistEntries.forEach((item) => {
+      const c = customerMap[item.customerId] || {};
+      const itemHandles = parseHandles(item.productHandle);
+      const matchedProducts = products.filter((p) =>
+        itemHandles.includes(p.handle),
+      );
+      const fallbackProducts = itemHandles
+        .filter((handle) => !matchedProducts.some((p) => p.handle === handle))
+        .map((handle) => ({
+          id: `handle:${handle}`,
+          title: handle,
+          handle,
+          featuredImage: null,
+        }));
+
+      if (!customersMap[item.customerId]) {
+        customersMap[item.customerId] = {
+          customerId: item.customerId,
+          name:
+            `${c.firstName || ""} ${c.lastName || ""}`.trim() || "Customer",
+          email: c.email || "",
+          phone: c.phone || "",
+          createdAt: toIsoDate(item.createdAt),
+          items: [],
+        };
+      }
+
+      customersMap[item.customerId].items.push(
+        ...matchedProducts,
+        ...fallbackProducts,
+      );
+    });
+
+    return Object.values(customersMap);
+  } catch (error) {
+    console.error("Wishlist enrich failed:", error);
+    return fallbackCustomers(wishlistEntries);
+  }
 }
 
 export const loader = async ({ request }) => {

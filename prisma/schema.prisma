@@ -38,5 +38,5 @@ model Wishlist {
   id         String   @id @default(auto()) @map("_id") @db.ObjectId  
   customerId String
   productHandle     String
-  createdAt  DateTime @default(now())
+  createdAt  DateTime? @default(now())
 }
