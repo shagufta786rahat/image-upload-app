@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wishlist Integration Manual</title>
+  <style>
+    :root {
+      --bg: #f4f1ec;
+      --panel: #fff;
+      --ink: #1c1917;
+      --muted: #78716c;
+      --line: #e7e5e4;
+      --brand: #1a4d3a;
+      --ok: #166534;
+      --code-bg: #1c1917;
+      --code-ink: #e7e5e4;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.55;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      min-height: 100vh;
+    }
+    nav {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+      background: var(--brand);
+      color: #fafaf9;
+      padding: 24px 16px 40px;
+    }
+    nav h1 {
+      font-size: 15px;
+      margin: 0 0 6px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    nav p {
+      margin: 0 0 20px;
+      font-size: 12px;
+      color: #d6d3d1;
+    }
+    nav a {
+      display: block;
+      color: #e7e5e4;
+      text-decoration: none;
+      font-size: 13px;
+      padding: 7px 10px;
+      border-radius: 8px;
+    }
+    nav a:hover, nav a:focus { background: rgba(255,255,255,.12); }
+    main {
+      max-width: 900px;
+      padding: 40px 32px 80px;
+    }
+    .hero {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 28px;
+      margin-bottom: 28px;
+    }
+    .hero h2 { margin: 0 0 8px; font-size: 28px; }
+    .hero p { margin: 0 0 10px; color: var(--muted); }
+    article.step {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 18px;
+    }
+    article.step h2 { margin: 0 0 10px; font-size: 20px; }
+    article.step p, article.step li { color: #44403c; }
+    ol, ul { padding-left: 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #fafaf9; }
+    .code-wrap {
+      margin: 14px 0 4px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #292524;
+    }
+    .code-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      background: #292524;
+      color: #d6d3d1;
+      padding: 8px 12px;
+      font-size: 12px;
+    }
+    .file { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .copy-btn {
+      border: 0;
+      cursor: pointer;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .copy-btn { background: #fafaf9; color: var(--ink); }
+    .copy-btn.copied { background: #bbf7d0; color: var(--ok); }
+    pre {
+      margin: 0;
+      padding: 16px;
+      overflow: auto;
+      max-height: 480px;
+      background: var(--code-bg);
+      color: var(--code-ink);
+      font-size: 12.5px;
+      line-height: 1.45;
+    }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+      nav { position: relative; height: auto; }
+      main { padding: 20px 16px 60px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav>
+      <h1>Wishlist Manual</h1>
+        <p>Copy any code block</p>
+      <a href="#overview">Overview</a>
+      <a href="#files">File map</a>
+      <a href="#step-1">1. wishlist.js</a>
+      <a href="#step-2">2. wishlist.css</a>
+      <a href="#step-3">3. wishlist-config</a>
+      <a href="#step-4">4. wishlist-button</a>
+      <a href="#step-5">5. header icon</a>
+      <a href="#step-6">6. wishlist-list</a>
+      <a href="#step-7">7. wishlist-product</a>
+      <a href="#step-8">8. page template</a>
+      <a href="#step-9">9. product card view</a>
+      <a href="#step-10">10. theme.liquid</a>
+      <a href="#step-11">11. Header</a>
+      <a href="#step-12">12. Product cards</a>
+      <a href="#step-13">13. Product page</a>
+      <a href="#step-14">14. Admin page</a>
+      <a href="#api">Backend APIs</a>
+      <a href="#test">Test checklist</a>
+      <a href="#trouble">Troubleshooting</a>
+    </nav>
+    <main>
+      <section class="hero" id="overview">
+        <h2>Wishlist Integration Manual</h2>
+        <p>Add wishlist to a Shopify theme and connect it to the app API.</p>
+        <p><strong>API base URL:</strong> https://personalize.salty.co.in</p>
+        <p>Guest users save products in the browser. Logged-in customers sync the same list to the app.</p>
+      </section>
+
+      <article class="step" id="files">
+        <h2>Where to put files in the theme</h2>
+        <p>Create these files in the theme, then apply the patches in steps 10–13.</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">theme file tree</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-text">theme/
+├── assets/wishlist.js
+├── assets/wishlist.css
+├── snippets/wishlist-config.liquid
+├── snippets/wishlist-button.liquid
+├── snippets/wishlist-header-icon.liquid
+├── sections/wishlist-list.liquid
+├── sections/wishlist-product.liquid
+└── templates/
+    ├── page.wishlist.json
+    └── product.wishlist-card.json</code></pre>
+      </div>
+      </article>
+
+      <article class="step" id="step-1">
+        <h2>Step 1 — assets/wishlist.js</h2>
+        <p>Create this file in the theme assets folder.</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">assets/wishlist.js</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-js">(() =&gt; {
+  const STORAGE_KEY = &quot;shopify_wishlist&quot;;
+  const API_BASE = () =&gt;
+    String(window.WISHLIST_API_URL || &quot;https://personalize.salty.co.in&quot;).replace(
+      /\/$/,
+      &quot;&quot;,
+    );
+
+  const customerId = () =&gt; {
+    const id = window.SHOPIFY_CUSTOMER_ID;
+    if (id == null || id === &quot;&quot; || id === &quot;null&quot;) return null;
+    return String(id);
+  };
+
+  const uniqueHandles = (handles) =&gt; {
+    const seen = new Set();
+    const result = [];
+    for (const value of handles || []) {
+      const handle = String(value || &quot;&quot;).trim();
+      if (!handle || seen.has(handle)) continue;
+      seen.add(handle);
+      result.push(handle);
+    }
+    return result;
+  };
+
+  const readLocal = () =&gt; {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return uniqueHandles(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      return [];
+    }
+  };
+
+  const writeLocal = (handles) =&gt; {
+    const next = uniqueHandles(handles);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    return next;
+  };
+
+  const parseApiHandles = (payload) =&gt; {
+    if (!payload) return [];
+    if (Array.isArray(payload)) return uniqueHandles(payload);
+    if (Array.isArray(payload.handles)) return uniqueHandles(payload.handles);
+    if (typeof payload === &quot;string&quot;) return uniqueHandles(payload.split(&quot;,&quot;));
+    if (typeof payload.handles === &quot;string&quot;) {
+      return uniqueHandles(payload.handles.split(&quot;,&quot;));
+    }
+    return [];
+  };
+
+  const setCount = (count) =&gt; {
+    document.querySelectorAll(&quot;.wishlist-count&quot;).forEach((el) =&gt; {
+      el.textContent = String(count);
+      el.setAttribute(&quot;data-count&quot;, String(count));
+    });
+  };
+
+  const updateIcons = (handles = readLocal()) =&gt; {
+    document.querySelectorAll(&quot;.wishlist-btn&quot;).forEach((btn) =&gt; {
+      const handle = (btn.dataset.handle || &quot;&quot;).trim();
+      if (!handle) return;
+      const active = handles.includes(handle);
+      btn.classList.toggle(&quot;active&quot;, active);
+      btn.setAttribute(&quot;aria-pressed&quot;, active ? &quot;true&quot; : &quot;false&quot;);
+      btn.setAttribute(
+        &quot;aria-label&quot;,
+        active ? &quot;Remove from wishlist&quot; : &quot;Add to wishlist&quot;,
+      );
+    });
+    setCount(handles.length);
+  };
+
+  const saveRemote = async (handles) =&gt; {
+    const id = customerId();
+    if (!id) return;
+
+    try {
+      await fetch(`${API_BASE()}/api/wishlist`, {
+        method: &quot;POST&quot;,
+        headers: { &quot;Content-Type&quot;: &quot;application/json&quot; },
+        body: JSON.stringify({
+          actionType: handles.length === 0 ? &quot;remove&quot; : &quot;save&quot;,
+          productHandle: handles.join(&quot;,&quot;),
+          customerId: id,
+        }),
+      });
+    } catch (error) {
+      console.error(&quot;Wishlist save failed:&quot;, error);
+    }
+  };
+
+  const fetchRemote = async () =&gt; {
+    const id = customerId();
+    if (!id) return [];
+
+    try {
+      const response = await fetch(
+        `${API_BASE()}/api/wishlist-list?customerId=${encodeURIComponent(id)}`,
+      );
+      if (!response.ok) return [];
+      return parseApiHandles(await response.json());
+    } catch (error) {
+      console.error(&quot;Wishlist list failed:&quot;, error);
+      return [];
+    }
+  };
+
+  const mergeWishlists = (localHandles, remoteHandles) =&gt;
+    uniqueHandles([...(remoteHandles || []), ...(localHandles || [])]);
+
+  const persist = async (handles) =&gt; {
+    const next = writeLocal(handles);
+    updateIcons(next);
+    await saveRemote(next);
+    return next;
+  };
+
+  const showEmpty = (container) =&gt; {
+    const text = container?.dataset.emptyText || &quot;Your wishlist is empty.&quot;;
+    if (!container) return;
+    container.innerHTML = `&lt;p class=&quot;wishlist-empty-text&quot;&gt;${text}&lt;/p&gt;`;
+    document.getElementById(&quot;MainContent&quot;)?.classList.add(&quot;wishlist-empty&quot;);
+  };
+
+  const loadWishlistPage = async (handles) =&gt; {
+    const container = document.getElementById(&quot;wishlist-container&quot;);
+    if (!container) return;
+
+    const list = uniqueHandles(handles);
+    container.innerHTML = &quot;&quot;;
+
+    if (!list.length) {
+      showEmpty(container);
+      return;
+    }
+
+    container.classList.add(&quot;is-loading&quot;);
+    document.getElementById(&quot;MainContent&quot;)?.classList.remove(&quot;wishlist-empty&quot;);
+
+    const cards = await Promise.all(
+      list.map(async (handle) =&gt; {
+        try {
+          const response = await fetch(
+            `/products/${encodeURIComponent(handle)}?view=wishlist-card`,
+          );
+          if (!response.ok) return null;
+          const html = await response.text();
+          const temp = document.createElement(&quot;div&quot;);
+          temp.innerHTML = html;
+          return temp.querySelector(&quot;.wishlist-item&quot;);
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    container.classList.remove(&quot;is-loading&quot;);
+
+    const fragment = document.createDocumentFragment();
+    cards.forEach((item) =&gt; {
+      if (item) fragment.appendChild(item);
+    });
+
+    if (!fragment.childNodes.length) {
+      showEmpty(container);
+      return;
+    }
+
+    container.appendChild(fragment);
+    updateIcons(list);
+  };
+
+  const toggleHandle = async (handle) =&gt; {
+    if (!handle) return;
+    const current = readLocal();
+    const next = current.includes(handle)
+      ? current.filter((item) =&gt; item !== handle)
+      : [...current, handle];
+    await persist(next);
+  };
+
+  const removeHandle = async (handle, removeBtn) =&gt; {
+    if (!handle) return;
+    const next = await persist(readLocal().filter((item) =&gt; item !== handle));
+    const item =
+      removeBtn.closest(&quot;.wishlist-item&quot;) ||
+      removeBtn.closest(&quot;.card-wrapper&quot;)?.parentElement;
+    item?.remove();
+
+    const container = document.getElementById(&quot;wishlist-container&quot;);
+    if (container &amp;&amp; !container.querySelector(&quot;.wishlist-item&quot;) &amp;&amp; !next.length) {
+      showEmpty(container);
+    }
+  };
+
+  document.body.addEventListener(&quot;click&quot;, (event) =&gt; {
+    const removeBtn = event.target.closest(&quot;.wishlist-remove&quot;);
+    if (removeBtn) {
+      event.preventDefault();
+      removeHandle((removeBtn.dataset.handle || &quot;&quot;).trim(), removeBtn);
+      return;
+    }
+
+    const btn = event.target.closest(&quot;.wishlist-btn&quot;);
+    if (!btn) return;
+    event.preventDefault();
+    toggleHandle((btn.dataset.handle || &quot;&quot;).trim());
+  });
+
+  const init = async () =&gt; {
+    const localHandles = readLocal();
+    updateIcons(localHandles);
+
+    const remoteHandles = await fetchRemote();
+    const merged = customerId()
+      ? mergeWishlists(localHandles, remoteHandles)
+      : localHandles;
+
+    if (customerId() &amp;&amp; merged.join(&quot;,&quot;) !== remoteHandles.join(&quot;,&quot;)) {
+      await persist(merged);
+    } else {
+      writeLocal(merged);
+      updateIcons(merged);
+    }
+
+    await loadWishlistPage(merged);
+  };
+
+  if (document.readyState === &quot;loading&quot;) {
+    document.addEventListener(&quot;DOMContentLoaded&quot;, init);
+  } else {
+    init();
+  }
+})();</code></pre>
+      </div>
+      </article>
+
+      <article class="step" id="step-2">
+        <h2>Step 2 — assets/wishlist.css</h2>
+        <p>Create this file in the theme assets folder. To change the filled-heart color, edit <code>.wishlist-btn.active</code>.</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">assets/wishlist.css</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-css">.product-card-wrapper,
+.product__media-wrapper,
+.wishlist-item {
+  position: relative;
+}
+
+.wishlist-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  position: absolute;
+  top: 0.75rem;
+  right: 0;
+  z-index: 9;
+  color: #1a1a1a;
+  padding: 0.4rem;
+  line-height: 0;
+  transition: transform 0.2s ease;
+}
+
+.product-card-wrapper .wishlist-btn {
+  top: auto;
+  bottom: 0;
+  right: -10px;
+}
+
+.wishlist-btn:hover {
+  transform: scale(1.1);
+}
+
+.wishlist-btn .icon-heart {
+  width: 20px;
+  height: auto;
+  display: block;
+}
+
+.wishlist-btn.active {
+  color: rgb(var(--color-button));
+}
+
+.wishlist-btn.active .icon-heart path {
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+.wishlist-grid {
+  padding-top: 60px;
+  padding-bottom: 60px;
+  min-height: 120px;
+}
+
+.wishlist-grid.is-loading {
+  opacity: 0.6;
+}
+
+a.wishlist-icon-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 15px;
+  color: currentColor;
+}
+
+.wishlist-remove {
+  position: absolute;
+  z-index: 9;
+  right: -10px;
+  top: -10px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #1a1a1a;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.wishlist-remove svg {
+  width: 28px;
+  height: auto;
+}
+
+.wishlist-remove:hover svg {
+  transform: scale(1.1);
+}
+
+.wishlist-count {
+  position: absolute;
+  background-color: rgb(var(--color-button));
+  color: rgb(var(--color-button-text));
+  height: 1.7rem;
+  width: 1.7rem;
+  border-radius: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 0.9rem;
+  bottom: 8px;
+  right: -5px;
+  line-height: 1;
+}
+
+.wishlist-count:empty,
+.wishlist-count[data-count=&quot;0&quot;] {
+  display: none;
+}
+
+.wishlist-grid .wishlist-empty-text,
+.wishlist-grid &gt; p {
+  text-align: center;
+  margin: auto;
+  font-size: 21px;
+  grid-column: 1 / -1;
+}
+
+.wishlist-item .card-wrapper,
+.wishlist-card {
+  border: 2px solid #f5f9f9;
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wishlist-card img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.wishlist-card .button {
+  width: 100%;
+}</code></pre>
+      </div>
+      </article>
+
+      <article class="step" id="step-3">
+        <h2>Step 3 — snippets/wishlist-config.liquid</h2>
+        <p>This is the only place to change the API URL later.</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">snippets/wishlist-config.liquid</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-liquid">{% doc %}
+Injects wishlist API config and the logged-in customer id for storefront JS.
+@example
+{% render &#x27;wishlist-config&#x27; %}
+{% enddoc %}
+&lt;script&gt;
+  window.WISHLIST_API_URL = &#x27;https://personalize.salty.co.in&#x27;;
+  window.SHOPIFY_CUSTOMER_ID = {{ customer.id | json }};
+&lt;/script&gt;</code></pre>
+      </div>
+      </article>
+
+      <article class="step" id="step-4">
+        <h2>Step 4 — snippets/wishlist-button.liquid</h2>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">snippets/wishlist-button.liquid</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-liquid">{% doc %}
+Renders a wishlist heart button, or a remove control on the wishlist page.
+@param {product} product - Product to save or remove
+@param {string} [mode] - Use &quot;remove&quot; on the wishlist page
+@example
+{% render &#x27;wishlist-button&#x27;, product: card_product %}
+{% render &#x27;wishlist-button&#x27;, product: product, mode: &#x27;remove&#x27; %}
+{% enddoc %}
+{%- if product and product.handle != blank -%}
+  {%- if mode == &#x27;remove&#x27; -%}
+    &lt;button
+      class=&quot;wishlist-remove&quot;
+      type=&quot;button&quot;
+      data-handle=&quot;{{ product.handle }}&quot;
+      aria-label=&quot;Remove from wishlist&quot;
+    &gt;
+      &lt;svg width=&quot;32&quot; height=&quot;32&quot; viewBox=&quot;0 0 32 32&quot; fill=&quot;none&quot; xmlns=&quot;http://www.w3.org/2000/svg&quot; aria-hidden=&quot;true&quot;&gt;
+        &lt;path d=&quot;M8 8L24.9706 24.9706&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1.5&quot; stroke-linecap=&quot;round&quot;/&gt;
+        &lt;path d=&quot;M8 25L24.9706 8.02944&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1.5&quot; stroke-linecap=&quot;round&quot;/&gt;
+      &lt;/svg&gt;
+    &lt;/button&gt;
+  {%- else -%}
+    &lt;button
+      class=&quot;wishlist-btn&quot;
+      type=&quot;button&quot;
+      data-handle=&quot;{{ product.handle }}&quot;
+      aria-label=&quot;Add to wishlist&quot;
+      aria-pressed=&quot;false&quot;
+    &gt;
+      &lt;svg class=&quot;icon-heart&quot; width=&quot;23&quot; height=&quot;20&quot; viewBox=&quot;0 0 23 20&quot; fill=&quot;none&quot; xmlns=&quot;http://www.w3.org/2000/svg&quot; aria-hidden=&quot;true&quot;&gt;
+        &lt;path d=&quot;M3.62983 11.8317L11.2013 18.1997C12.4633 16.9867 15.7445 14.7428 18.7729 11.8317C25.8719 5.00779 18.7729 -3.17861 11.2013 2.73459C3.63021 -3.17837 -3.468 5.00902 3.62983 11.8317Z&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1.4&quot;/&gt;
+      &lt;/svg&gt;
+    &lt;/button&gt;
+  {%- endif -%}
+{%- endif -%}</code></pre>
+      </div>
+      </article>
+
+      <article class="step" id="step-5">
+        <h2>Step 5 — snippets/wishlist-header-icon.liquid</h2>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">snippets/wishlist-header-icon.liquid</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-liquid">{% doc %}
+Header wishlist icon with live count badge.
+@param {string} [url] - Wishlist page URL
+@example
+{% render &#x27;wishlist-header-icon&#x27;, url: &#x27;/pages/wishlist&#x27; %}
+{% enddoc %}
+&lt;a href=&quot;{{ url | default: &#x27;/pages/wishlist&#x27; }}&quot; class=&quot;wishlist-icon-head&quot; aria-label=&quot;Wishlist&quot;&gt;
+  &lt;svg width=&quot;28&quot; height=&quot;28&quot; viewBox=&quot;0 0 28 28&quot; fill=&quot;none&quot; xmlns=&quot;http://www.w3.org/2000/svg&quot; aria-hidden=&quot;true&quot;&gt;
+    &lt;path d=&quot;M6.42817 16.9656L13.9997 23.3336C15.2616 22.1206 18.5428 19.8768 21.5713 16.9656C28.6702 10.1418 21.5713 1.95536 13.9997 7.86855C6.42855 1.9556 -0.669664 10.143 6.42817 16.9656Z&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1.4&quot;/&gt;
+  &lt;/svg&gt;
+  &lt;span class=&quot;wishlist-count&quot; aria-live=&quot;polite&quot;&gt;0&lt;/span&gt;
+&lt;/a&gt;</code></pre>
+      </div>
+      </article>
+
+      <article class="step" id="step-6">
+        <h2>Step 6 — sections/wishlist-list.liquid</h2>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">sections/wishlist-list.liquid</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-liquid">&lt;div class=&quot;page-width&quot;&gt;
+  &lt;div
+    id=&quot;wishlist-container&quot;
+    class=&quot;wishlist-grid grid product-grid grid--2-col-tablet-down grid--4-col-desktop&quot;
+    data-empty-text=&quot;Your wishlist is empty.&quot;
+  &gt;&lt;/div&gt;
+&lt;/div&gt;
+
+{% schema %}
+{
+  &quot;name&quot;: &quot;Wishlist list&quot;,
+  &quot;tag&quot;: &quot;section&quot;,
+  &quot;class&quot;: &quot;section-wishlist-list&quot;,
+  &quot;enabled_on&quot;: {
+    &quot;templates&quot;: [&quot;page&quot;]
+  },
+  &quot;settings&quot;: [
+    {
+      &quot;type&quot;: &quot;paragraph&quot;,
+      &quot;content&quot;: &quot;Loads saved products from local storage for guests, and from the app API when the customer is logged in.&quot;
+    }
+  ]
+}
+{% endschema %}</code></pre>
+      </div>
+        <p>Optional: if the theme has these assets and you want quick-add on wishlist cards, add this at the top of the section:</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">optional scripts</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-liquid">&lt;script src=&quot;{{ &#x27;quick-add.js&#x27; | asset_url }}&quot; defer=&quot;defer&quot;&gt;&lt;/script&gt;
+&lt;script src=&quot;{{ &#x27;product-form.js&#x27; | asset_url }}&quot; defer=&quot;defer&quot;&gt;&lt;/script&gt;</code></pre>
+      </div>
+      </article>
+
+      <article class="step" id="step-7">
+        <h2>Step 7 — sections/wishlist-product.liquid</h2>
+        <p>Standalone product card. No extra snippets required.</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">sections/wishlist-product.liquid</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-liquid">&lt;div class=&quot;wishlist-item grid__item&quot;&gt;
+  &lt;article class=&quot;card-wrapper product-card-wrapper wishlist-card&quot;&gt;
+    {% render &#x27;wishlist-button&#x27;, product: product, mode: &#x27;remove&#x27; %}
+    &lt;a href=&quot;{{ product.url }}&quot; class=&quot;full-unstyled-link&quot;&gt;
+      {%- if product.featured_image -%}
+        {%- assign wishlist_alt = product.featured_image.alt | default: product.title -%}
+        {{ product.featured_image | image_url: width: 600 | image_tag: loading: &#x27;lazy&#x27;, alt: wishlist_alt }}
+      {%- endif -%}
+      &lt;h3 class=&quot;card__heading h5&quot;&gt;{{ product.title | escape }}&lt;/h3&gt;
+    &lt;/a&gt;
+    &lt;div class=&quot;price&quot;&gt;
+      {{ product.price | money }}
+      {%- if product.compare_at_price &gt; product.price -%}
+        &lt;s&gt;{{ product.compare_at_price | money }}&lt;/s&gt;
+      {%- endif -%}
+    &lt;/div&gt;
+    {%- if product.available -%}
+      &lt;product-form&gt;
+        {%- form &#x27;product&#x27;, product -%}
+          &lt;input type=&quot;hidden&quot; name=&quot;id&quot; value=&quot;{{ product.selected_or_first_available_variant.id }}&quot;&gt;
+          &lt;button type=&quot;submit&quot; name=&quot;add&quot; class=&quot;button&quot;&gt;Add to cart&lt;/button&gt;
+        {%- endform -%}
+      &lt;/product-form&gt;
+    {%- else -%}
+      &lt;button type=&quot;button&quot; class=&quot;button&quot; disabled&gt;Sold out&lt;/button&gt;
+    {%- endif -%}
+  &lt;/article&gt;
+&lt;/div&gt;
+
+{% schema %}
+{
+  &quot;name&quot;: &quot;Wishlist product card&quot;,
+  &quot;tag&quot;: &quot;section&quot;,
+  &quot;class&quot;: &quot;section-wishlist-product&quot;,
+  &quot;settings&quot;: []
+}
+{% endschema %}</code></pre>
+      </div>
+        <p>If the theme already has a product card snippet, you can use this instead (also apply the Step 12 patch):</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">optional product card snippet</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-liquid">&lt;div class=&quot;wishlist-item grid__item&quot;&gt;
+  {% render &#x27;card-product&#x27;, card_product: product, quick_add: &#x27;standard&#x27;, wishlist: false %}
+&lt;/div&gt;</code></pre>
+      </div>
+      </article>
+
+      <article class="step" id="step-8">
+        <h2>Step 8 — templates/page.wishlist.json</h2>
+        <p>If the theme has no <code>rich-text</code> section, keep only the <code>main</code> section.</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">templates/page.wishlist.json</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-json">{
+  &quot;sections&quot;: {
+    &quot;heading&quot;: {
+      &quot;type&quot;: &quot;rich-text&quot;,
+      &quot;blocks&quot;: {
+        &quot;heading&quot;: {
+          &quot;type&quot;: &quot;heading&quot;,
+          &quot;settings&quot;: {
+            &quot;heading&quot;: &quot;Wishlist&quot;,
+            &quot;heading_size&quot;: &quot;h1&quot;
+          }
+        }
+      },
+      &quot;block_order&quot;: [&quot;heading&quot;],
+      &quot;settings&quot;: {
+        &quot;desktop_content_position&quot;: &quot;center&quot;,
+        &quot;content_alignment&quot;: &quot;center&quot;,
+        &quot;full_width&quot;: true,
+        &quot;padding_top&quot;: 40,
+        &quot;padding_bottom&quot;: 0
+      }
+    },
+    &quot;main&quot;: {
+      &quot;type&quot;: &quot;wishlist-list&quot;,
+      &quot;settings&quot;: {}
+    }
+  },
+  &quot;order&quot;: [&quot;heading&quot;, &quot;main&quot;]
+}</code></pre>
+      </div>
+      </article>
+
+      <article class="step" id="step-9">
+        <h2>Step 9 — templates/product.wishlist-card.json</h2>
+        <p>Do <strong>not</strong> assign this template to a product. It is only loaded with <code>?view=wishlist-card</code>.</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">templates/product.wishlist-card.json</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-json">{
+  &quot;layout&quot;: false,
+  &quot;sections&quot;: {
+    &quot;main&quot;: {
+      &quot;type&quot;: &quot;wishlist-product&quot;,
+      &quot;settings&quot;: {}
+    }
+  },
+  &quot;order&quot;: [&quot;main&quot;]
+}</code></pre>
+      </div>
+      </article>
+
+      <article class="step" id="step-10">
+        <h2>Step 10 — Patch layout/theme.liquid</h2>
+        <p>Add this in the document head, near <code>content_for_header</code>. Remove any existing <code>SHOPIFY_CUSTOMER_ID</code> script; this snippet sets it.</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">layout/theme.liquid</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-liquid">{{ &#x27;wishlist.css&#x27; | asset_url | stylesheet_tag }}
+&lt;script src=&quot;{{ &#x27;wishlist.js&#x27; | asset_url }}&quot; defer=&quot;defer&quot;&gt;&lt;/script&gt;
+{% render &#x27;wishlist-config&#x27; %}</code></pre>
+      </div>
+      </article>
+
+      <article class="step" id="step-11">
+        <h2>Step 11 — Header icon</h2>
+        <p>In <code>sections/header.liquid</code>, next to search/account icons and before the cart:</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">sections/header.liquid</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-liquid">{% if section.settings.wishlist_enable %}
+  {% render &#x27;wishlist-header-icon&#x27;, url: section.settings.wishlist_url %}
+{% endif %}</code></pre>
+      </div>
+        <p>Add these two settings inside the section <code>schema</code> JSON. Keep the JSON valid (no extra trailing comma):</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">header schema settings</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-json">{
+  &quot;type&quot;: &quot;checkbox&quot;,
+  &quot;id&quot;: &quot;wishlist_enable&quot;,
+  &quot;label&quot;: &quot;Show wishlist icon&quot;,
+  &quot;default&quot;: true
+},
+{
+  &quot;type&quot;: &quot;url&quot;,
+  &quot;id&quot;: &quot;wishlist_url&quot;,
+  &quot;label&quot;: &quot;Wishlist page&quot;
+}</code></pre>
+      </div>
+        <p>Theme editor → Header → Wishlist page = <code>/pages/wishlist</code></p>
+      </article>
+
+      <article class="step" id="step-12">
+        <h2>Step 12 — Heart on collection / product cards</h2>
+        <p>Inside the image/media wrapper of <code>snippets/card-product.liquid</code> (or whatever your product-card snippet is named):</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">snippets/card-product.liquid</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-liquid">{% if wishlist == false %}
+  {% render &#x27;wishlist-button&#x27;, product: card_product, mode: &#x27;remove&#x27; %}
+{% else %}
+  {% render &#x27;wishlist-button&#x27;, product: card_product %}
+{% endif %}</code></pre>
+      </div>
+        <p>If the product variable is not <code>card_product</code>, pass that object instead:</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">alternate product variable</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-liquid">{% render &#x27;wishlist-button&#x27;, product: product %}</code></pre>
+      </div>
+      </article>
+
+      <article class="step" id="step-13">
+        <h2>Step 13 — Heart on the product page</h2>
+        <p>Inside <code>product__media-wrapper</code> in <code>sections/main-product.liquid</code>:</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">sections/main-product.liquid</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-liquid">{% render &#x27;wishlist-button&#x27;, product: product %}</code></pre>
+      </div>
+      </article>
+
+      <article class="step" id="step-14">
+        <h2>Step 14 — Create the Wishlist page in Shopify admin</h2>
+        <ol>
+          <li>Online Store → Pages → Add page</li>
+          <li>Title: <strong>Wishlist</strong></li>
+          <li>Theme template: <strong>wishlist</strong> (<code>page.wishlist</code>)</li>
+          <li>Handle: <code>wishlist</code> so the URL is <code>/pages/wishlist</code></li>
+          <li>Save</li>
+          <li>Select that URL in the header setting</li>
+        </ol>
+      </article>
+
+      <article class="step" id="api">
+        <h2>APIs</h2>
+        <table>
+          <thead><tr><th>Method</th><th>URL</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td>POST</td><td>https://personalize.salty.co.in/api/wishlist</td><td>Save or clear</td></tr>
+            <tr><td>GET</td><td>https://personalize.salty.co.in/api/wishlist-list?customerId=ID</td><td>List handles</td></tr>
+          </tbody>
+        </table>
+        <p>Save body:</p>
+        
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <span class="file">POST /api/wishlist</span>
+          <button type="button" class="copy-btn" data-copy>Copy</button>
+        </div>
+        <pre><code class="language-json">{
+  &quot;actionType&quot;: &quot;save&quot;,
+  &quot;customerId&quot;: &quot;1234567890&quot;,
+  &quot;productHandle&quot;: &quot;serum-handle,face-wash-handle&quot;
+}</code></pre>
+      </div>
+        <p>To clear the list, send <code>"actionType": "remove"</code>.</p>
+      </article>
+
+      <article class="step" id="test">
+        <h2>Test checklist</h2>
+        <ol>
+          <li>Logged out: click a collection heart → it fills and the header count becomes 1</li>
+          <li><code>/pages/wishlist</code> shows that product; X removes it</li>
+          <li>Log in and save a product</li>
+          <li>Incognito + log in → list loads from the server</li>
+          <li>Save as guest, then log in → lists merge</li>
+          <li>PDP heart toggles</li>
+          <li>App admin → Wishlist tab shows the customer</li>
+          <li>Network: <code>personalize.salty.co.in/api/wishlist</code> returns 200, no CORS error</li>
+        </ol>
+      </article>
+
+      <article class="step" id="trouble">
+        <h2>Troubleshooting</h2>
+        <table>
+          <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr><td>Heart click does nothing</td><td><code>wishlist.js</code> not loaded, or <code>data-handle</code> missing</td></tr>
+            <tr><td>Count stays 0</td><td>Header is missing <code>.wishlist-count</code></td></tr>
+            <tr><td>Page empty but count is 2</td><td><code>product.wishlist-card.json</code> missing, or handle is wrong</td></tr>
+            <tr><td>CORS error</td><td>Wrong app URL, or app is down</td></tr>
+            <tr><td>Empty after login</td><td><code>wishlist-config</code> snippet missing</td></tr>
+            <tr><td>Card 404</td><td>Product unpublished or handle renamed</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+    </main>
+  </div>
+
+  <script>
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-copy]");
+      if (!btn) return;
+      const wrap = btn.closest(".code-wrap");
+      const text = wrap.querySelector("code").innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = "Copied";
+        btn.classList.add("copied");
+        setTimeout(() => {
+          btn.textContent = "Copy";
+          btn.classList.remove("copied");
+        }, 1400);
+      });
+    });
+  </script>
+</body>
+</html>

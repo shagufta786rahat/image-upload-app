@@ -1,21 +1,36 @@
-import db from "../../db.server";
+import { jsonCors, optionsCors } from "../../cors.server";
+import {
+  customerIdString,
+  findWishlistByCustomerId,
+  parseHandles,
+} from "../../wishlist.server";
+
+const METHODS = "GET, OPTIONS";
 
 export async function loader({ request }) {
-  const url = new URL(request.url);
-  const customerId = url.searchParams.get("customerId");
-
-  if (!customerId) {
-    return new Response(JSON.stringify([]), {
-      headers: { "Access-Control-Allow-Origin": "*" }
-    });
+  if (request.method === "OPTIONS") {
+    return optionsCors(request, METHODS);
   }
 
-  const wishlist = await db.wishlist.findFirst({
-    where: { customerId },
-  });
+  try {
+    const url = new URL(request.url);
+    const customerId = customerIdString(url.searchParams.get("customerId"));
 
-  return new Response(
-    JSON.stringify(wishlist ? wishlist.productHandle : []),
-    { headers: { "Access-Control-Allow-Origin": "*" } }
-  );
+    if (!customerId || customerId === "null") {
+      return jsonCors(request, { ok: true, handles: [] }, 200, METHODS);
+    }
+
+    const row = await findWishlistByCustomerId(customerId);
+    const handles = parseHandles(row?.productHandle);
+
+    return jsonCors(request, { ok: true, handles }, 200, METHODS);
+  } catch (error) {
+    console.error("Wishlist list error:", error);
+    return jsonCors(
+      request,
+      { ok: false, error: error.message || "Wishlist list failed", handles: [] },
+      500,
+      METHODS,
+    );
+  }
 }

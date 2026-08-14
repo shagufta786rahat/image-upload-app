@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "5714ef7495e081cbb0a2a09e4ae5cd31"
-name = "image-upload-app"
+name = "Salty HUB"
 application_url = "https://personalize.salty.co.in/"
 embedded = true
 

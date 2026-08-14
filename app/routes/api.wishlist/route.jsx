@@ -1,83 +1,84 @@
-import db from "../../db.server";
+import { jsonCors, optionsCors } from "../../cors.server";
+import {
+  customerIdString,
+  deleteWishlistForCustomer,
+  normalizeHandles,
+  parseHandles,
+  saveWishlistForCustomer,
+} from "../../wishlist.server";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  "Content-Type": "application/json"
-};
+const METHODS = "GET, POST, OPTIONS";
 
-export async function loader() {
-  return new Response(
-    JSON.stringify({ status: "API working — use POST" }),
-    { status: 200, headers: corsHeaders }
+export async function loader({ request }) {
+  if (request.method === "OPTIONS") {
+    return optionsCors(request, METHODS);
+  }
+
+  return jsonCors(
+    request,
+    { ok: true, message: "Use POST to save or clear a wishlist" },
+    200,
+    METHODS,
   );
 }
 
 export async function action({ request }) {
-  // --- Handle OPTIONS preflight ---
   if (request.method === "OPTIONS") {
-    return new Response("OK", { status: 200, headers: corsHeaders });
+    return optionsCors(request, METHODS);
+  }
+
+  if (request.method !== "POST") {
+    return jsonCors(
+      request,
+      { ok: false, error: "Method not allowed" },
+      405,
+      METHODS,
+    );
   }
 
   try {
     const body = await request.json();
-    const { actionType, productHandle, customerId } = body;
-
-    if (!customerId) {
-      return new Response(
-        JSON.stringify({ error: "Missing parameters" }),
-        { status: 400, headers: corsHeaders }
-      );
-    }
-
-     // -------------------------------
-    // 1. IF WISHLIST EMPTY → DELETE
-    // -------------------------------
-    //console.log(actionType,"---actionType")
-    if (actionType === "remove") {
-       console.log(actionType,"---actionType2");
-      await db.wishlist.deleteMany({
-        where: { customerId }
-      });
-
-      return new Response(
-        JSON.stringify({ message: "Wishlist removed" }),
-        { status: 200, headers: corsHeaders }
-      );
-    }
-
-   const existing = await db.wishlist.findFirst({
-      where: { customerId }
-    });
-
-    let wishlist_save;
-
-    if (existing) {
-       wishlist_save = await db.wishlist.updateMany({
-        where: { customerId: customerId },
-        data: { productHandle: productHandle },
-      });
-    } else {
-      wishlist_save = await db.wishlist.create({
-      data: {
-        customerId,
-        productHandle,
-      },
-    });
-    }
-
-    return new Response(
-      JSON.stringify({ message: "POST OK", wishlist_save }),
-      { status: 200, headers: corsHeaders }
+    const customerId = customerIdString(body.customerId);
+    const actionType = String(body.actionType || "save").toLowerCase();
+    const handles = normalizeHandles(
+      Array.isArray(body.productHandle)
+        ? body.productHandle
+        : parseHandles(body.productHandle),
     );
 
-  } catch (error) {
-    console.error("Wishlist error:", error);
+    if (!customerId || customerId === "null") {
+      return jsonCors(
+        request,
+        { ok: false, error: "Missing customerId" },
+        400,
+        METHODS,
+      );
+    }
 
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500, headers: corsHeaders }
+    if (actionType === "remove" || handles.length === 0) {
+      await deleteWishlistForCustomer(customerId);
+      return jsonCors(
+        request,
+        { ok: true, message: "Wishlist cleared", handles: [] },
+        200,
+        METHODS,
+      );
+    }
+
+    await saveWishlistForCustomer(customerId, handles.join(","));
+    return jsonCors(
+      request,
+      { ok: true, message: "Wishlist saved", handles },
+      200,
+      METHODS,
+    );
+  } catch (error) {
+    console.error("Wishlist save error:", error);
+    return jsonCors(
+      request,
+      { ok: false, error: error.message || "Wishlist save failed" },
+      500,
+      METHODS,
     );
   }
 }
