@@ -14,12 +14,13 @@ export function corsHeaders(request, methods = "GET, POST, PUT, OPTIONS") {
   };
 }
 
-export function jsonCors(request, data, status = 200, methods) {
+export function jsonCors(request, data, status = 200, methods, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json",
       ...corsHeaders(request, methods),
+      ...extraHeaders,
     },
   });
 }
