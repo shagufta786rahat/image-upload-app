@@ -1,12 +1,17 @@
 const REVIEW_REQUEST_URL = "https://judge.me/api/orders/send_manual_review_request";
+const CREATE_REVIEW_URL = "https://judge.me/api/v1/reviews";
 const REVIEWS_URL = "https://api.judge.me/api/v1/reviews";
+const DMY_DATE_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_PER_PAGE = 100;
 const DEFAULT_MAX_PAGES = 50;
 const MAX_PRODUCT_IDS = 100;
+const MAX_PICTURE_URLS = 5;
+const MAX_BODY_LENGTH = 5000;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const DMY_DATE_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
-const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/;
+const IMAGE_URL_PATTERN = /^https?:\/\/.+\.(jpe?g|png)(\?.*)?$/i;
+const NAME_FORMATS = new Set(["", "last_initial", "all_initials", "anonymous"]);
 const SECRET_QUERY_PATTERN = /(?:api_token|token|access_token)=([^&"'\s]+)/gi;
 const SECRET_HEADER_PATTERN = /(?:X-Api-Token|Bearer)\s*[:=]?\s*([^\s"',]+)/gi;
 const SECRET_KEYS = new Set([
@@ -30,22 +35,6 @@ export class JudgeMeError extends Error {
 function toPositiveInt(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
-}
-
-function pad2(value) {
-  return String(value).padStart(2, "0");
-}
-
-function isValidCalendarDate(year, month, day) {
-  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1970) {
-    return false;
-  }
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
 }
 
 export function redactSecrets(value) {
@@ -122,6 +111,22 @@ export function isValidEmail(value) {
   if (typeof value !== "string") return false;
   const email = value.trim();
   return email.length > 3 && email.length <= 254 && EMAIL_PATTERN.test(email);
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function isValidCalendarDate(year, month, day) {
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1970) {
+    return false;
+  }
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
 }
 
 export function toJudgeMeDate(value, fieldName) {
@@ -260,6 +265,120 @@ export function validateReviewRequestBody(body) {
     quantity,
     ...(processedAt ? { processed_at: processedAt } : {}),
   };
+}
+
+function parsePictureUrls(raw) {
+  if (raw == null || raw === "") return [];
+  const values = Array.isArray(raw)
+    ? raw
+    : String(raw)
+        .split(",")
+        .map((item) => item.trim());
+  const urls = [];
+
+  for (const value of values) {
+    const url = String(value || "").trim();
+    if (!url) continue;
+    if (!IMAGE_URL_PATTERN.test(url)) {
+      throw new JudgeMeError(
+        "picture_urls must be public http(s) .jpg, .jpeg, or .png URLs",
+        { status: 400, details: { field: "picture_urls" } },
+      );
+    }
+    urls.push(url);
+    if (urls.length > MAX_PICTURE_URLS) {
+      throw new JudgeMeError("A maximum of 5 picture_urls is allowed", {
+        status: 400,
+        details: { field: "picture_urls" },
+      });
+    }
+  }
+
+  return urls;
+}
+
+export function validateCreateReviewBody(body, { ipAddr } = {}) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new JudgeMeError("Request body must be a JSON object", {
+      status: 400,
+    });
+  }
+
+  const name =
+    requiredString(body, "name") || requiredString(body, "reviewer_name");
+  const email = (
+    requiredString(body, "email") || requiredString(body, "reviewer_email")
+  ).toLowerCase();
+  const reviewBody = requiredString(body, "body");
+  const productId = normalizeShopifyId(
+    body.id ?? body.shopify_product_id ?? body.product_id,
+  );
+  const title = requiredString(body, "title");
+  const missing = [];
+
+  if (!name) missing.push("name");
+  if (!email) missing.push("email");
+  if (body.rating == null || body.rating === "") missing.push("rating");
+  if (!reviewBody) missing.push("body");
+
+  if (missing.length > 0) {
+    throw new JudgeMeError("Missing required fields", {
+      status: 400,
+      details: { fields: missing },
+    });
+  }
+
+  const rating = Number(body.rating);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    throw new JudgeMeError("rating must be an integer from 1 to 5", {
+      status: 400,
+      details: { field: "rating" },
+    });
+  }
+
+  if (!isValidEmail(email)) {
+    throw new JudgeMeError("email must be a valid email address", {
+      status: 400,
+      details: { field: "email" },
+    });
+  }
+
+  if (name.length > 200) {
+    throw new JudgeMeError("name is too long", { status: 400 });
+  }
+  if (reviewBody.length > MAX_BODY_LENGTH) {
+    throw new JudgeMeError("body is too long", { status: 400 });
+  }
+
+  const payload = {
+    platform: "shopify",
+    name,
+    email,
+    rating,
+    body: reviewBody,
+  };
+
+  if (productId) payload.id = productId;
+  if (title) payload.title = title.slice(0, 200);
+
+  const nameFormat = requiredString(body, "reviewer_name_format");
+  if (nameFormat) {
+    if (!NAME_FORMATS.has(nameFormat)) {
+      throw new JudgeMeError(
+        "reviewer_name_format must be last_initial, all_initials, or anonymous",
+        { status: 400, details: { field: "reviewer_name_format" } },
+      );
+    }
+    payload.reviewer_name_format = nameFormat;
+  }
+
+  const pictureUrls = parsePictureUrls(body.picture_urls);
+  if (pictureUrls.length > 0) payload.picture_urls = pictureUrls;
+
+  const ip = requiredString(body, "ip_addr") || String(ipAddr || "").trim();
+  if (ip && ip !== "unknown") payload.ip_addr = ip;
+
+  return payload;
 }
 
 function parseJsonSafely(text) {
@@ -407,6 +526,39 @@ export async function sendManualReviewRequest(input) {
   }
 
   return safeDetails(data) ?? data;
+}
+
+export async function createReview(input, options = {}) {
+  const { shopDomain } = getJudgeMeConfig();
+  const payload = validateCreateReviewBody(input, options);
+  payload.shop_domain = shopDomain;
+
+  const data = await judgeMeFetch(CREATE_REVIEW_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (hasJudgeMeBusinessError(data)) {
+    throw new JudgeMeError(
+      extractJudgeMeErrorMessage(data, 400) ||
+        "Unable to create Judge.me review",
+      {
+        status: 400,
+        details: safeDetails(data),
+      },
+    );
+  }
+
+  const rawReview =
+    data?.review && typeof data.review === "object" ? data.review : data;
+  const review = sanitizeReview(rawReview);
+
+  if (!review) {
+    throw new JudgeMeError("Judge.me did not return a review", { status: 502 });
+  }
+
+  return review;
 }
 
 function productExternalId(review) {
