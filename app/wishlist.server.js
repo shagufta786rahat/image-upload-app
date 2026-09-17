@@ -267,18 +267,21 @@ export async function findWishlists({ skip, take, where = {} } = {}) {
 export async function saveWishlistForCustomer(customerId, productHandle) {
   const model = wishlistModel();
   const existing = await findWishlistByCustomerId(customerId);
+  const created = !existing;
 
   if (model?.update && model?.create) {
     try {
       if (isObjectId(existing?.id)) {
-        return model.update({
+        await model.update({
           where: { id: existing.id },
           data: { productHandle },
         });
+        return { customerId, productHandle, created: false };
       }
-      return model.create({
+      await model.create({
         data: { customerId, productHandle },
       });
+      return { customerId, productHandle, created: true };
     } catch (error) {
       console.error("Prisma wishlist save failed, using raw query:", error);
     }
@@ -295,7 +298,7 @@ export async function saveWishlistForCustomer(customerId, productHandle) {
         },
       ],
     }));
-    return { customerId, productHandle };
+    return { customerId, productHandle, created: false };
   }
 
   await runOnCollections((collection) => ({
@@ -308,7 +311,7 @@ export async function saveWishlistForCustomer(customerId, productHandle) {
       },
     ],
   }));
-  return { customerId, productHandle };
+  return { customerId, productHandle, created };
 }
 
 export async function deleteWishlistForCustomer(customerId) {
@@ -325,4 +328,40 @@ export async function deleteWishlistForCustomer(customerId) {
     delete: collection,
     deletes: [{ q: { customerId }, limit: 0 }],
   }));
+}
+
+export async function addProductHandlesForCustomer(customerId, handlesToAdd) {
+  const existing = await findWishlistByCustomerId(customerId);
+  const current = parseHandles(existing?.productHandle);
+  const incoming = normalizeHandles(handlesToAdd);
+  const added = incoming.filter((handle) => !current.includes(handle));
+  const handles = [...current, ...added];
+  await saveWishlistForCustomer(customerId, handles.join(","));
+  return {
+    customerId,
+    handles,
+    added,
+    created: !existing,
+  };
+}
+
+export async function removeProductHandlesForCustomer(customerId, handlesToRemove) {
+  const existing = await findWishlistByCustomerId(customerId);
+  const current = parseHandles(existing?.productHandle);
+  const removeSet = new Set(normalizeHandles(handlesToRemove));
+  const removed = current.filter((handle) => removeSet.has(handle));
+  const handles = current.filter((handle) => !removeSet.has(handle));
+
+  if (handles.length === 0) {
+    await deleteWishlistForCustomer(customerId);
+  } else {
+    await saveWishlistForCustomer(customerId, handles.join(","));
+  }
+
+  return {
+    customerId,
+    handles,
+    removed,
+    cleared: handles.length === 0,
+  };
 }

@@ -1,7 +1,12 @@
 import { jsonCors, optionsCors } from "../../cors.server";
 import {
+  emitWishlistWebhook,
+  WISHLIST_EVENTS,
+} from "../../wishlist-webhooks.server";
+import {
   customerIdString,
   deleteWishlistForCustomer,
+  findWishlistByCustomerId,
   normalizeHandles,
   parseHandles,
   saveWishlistForCustomer,
@@ -57,6 +62,10 @@ export async function action({ request }) {
 
     if (actionType === "remove" || handles.length === 0) {
       await deleteWishlistForCustomer(customerId);
+      await emitWishlistWebhook(WISHLIST_EVENTS.cleared, {
+        customerId,
+        handles: [],
+      });
       return jsonCors(
         request,
         { ok: true, message: "Wishlist cleared", handles: [] },
@@ -65,7 +74,12 @@ export async function action({ request }) {
       );
     }
 
+    const existing = await findWishlistByCustomerId(customerId);
     await saveWishlistForCustomer(customerId, handles.join(","));
+    await emitWishlistWebhook(
+      existing ? WISHLIST_EVENTS.updated : WISHLIST_EVENTS.created,
+      { customerId, handles },
+    );
     return jsonCors(
       request,
       { ok: true, message: "Wishlist saved", handles },

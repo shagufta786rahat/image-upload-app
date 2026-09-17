@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Track Order</title>
+    <link rel="stylesheet" href="./track-order.css" />
+    <style>
+      body {
+        margin: 0;
+        background: #f3f3f3;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        padding: 24px 16px 48px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Repeat this block for every order. JS fills it using order-id. -->
+    <div class="track-order-container" order-id="47607613505762"></div>
+
+    <script>
+      window.TRACK_ORDER_CONFIG = {
+        mockPayload: {
+          orders: [
+            {
+              id: "47607613505762",
+              name: "Amrutha M D",
+              tracking_number: "47607613505762",
+              tracking_data: {
+                track: {
+                  status: "Pickup Failed",
+                  location: "Bangalore_BenniganaHalli_C (Karnataka)",
+                  details: [
+                    {
+                      status: "New",
+                      location: "Unknown",
+                      desc: "Manifest uploaded",
+                      timestamp: "2026-08-19T19:24:39.291Z",
+                    },
+                    {
+                      status: "Out For Pickup",
+                      location: "Bangalore_BenniganaHalli_C (Karnataka)",
+                      desc: "Out for Pickup",
+                      timestamp: "2026-08-20T08:26:18.000Z",
+                    },
+                    {
+                      status: "Pickup Failed",
+                      location: "Bangalore_BenniganaHalli_C (Karnataka)",
+                      desc: "Shipper unavailable",
+                      timestamp: "2026-08-20T10:25:00.000Z",
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      };
+    </script>
+    <script src="./track-order.js"></script>
+  </body>
+</html>

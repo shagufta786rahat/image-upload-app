@@ -40,3 +40,11 @@ model Wishlist {
   productHandle     String
   createdAt  DateTime? @default(now())
 }
+
+model WishlistWebhook {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  topic     String
+  address   String
+  format    String   @default("json")
+  createdAt DateTime @default(now())
+}

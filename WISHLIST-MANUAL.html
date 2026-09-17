@@ -157,6 +157,7 @@
       <a href="#step-13">13. Product page</a>
       <a href="#step-14">14. Admin page</a>
       <a href="#api">Backend APIs</a>
+      <a href="#webhooks">Webhooks</a>
       <a href="#test">Test checklist</a>
       <a href="#trouble">Troubleshooting</a>
     </nav>
@@ -969,6 +970,20 @@ Header wishlist icon with live count badge.
 }</code></pre>
       </div>
         <p>To clear the list, send <code>"actionType": "remove"</code>.</p>
+      </article>
+
+      <article class="step" id="webhooks">
+        <h2>Custom webhooks</h2>
+        <p>Developers register with a <code>topic</code> and HTTPS <code>address</code>. Full doc: <a href="WISHLIST-WEBHOOKS.html">WISHLIST-WEBHOOKS.html</a>.</p>
+        <table>
+          <thead><tr><th>Action</th><th>URL</th></tr></thead>
+          <tbody>
+            <tr><td>Create</td><td>POST /api/wishlist-webhooks</td></tr>
+            <tr><td>List</td><td>GET /api/wishlist-webhooks</td></tr>
+            <tr><td>Delete</td><td>DELETE /api/wishlist-webhooks?id=ID</td></tr>
+          </tbody>
+        </table>
+        <p>Body: <code>{"topic":"wishlist/item-added","address":"https://your-app.com/hooks"}</code></p>
       </article>
 
       <article class="step" id="test">
