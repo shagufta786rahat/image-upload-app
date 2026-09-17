@@ -3,181 +3,304 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Salty HUB — Wishlist Webhooks for Developers</title>
+  <title>Wishlist Webhooks API — Salty HUB</title>
   <style>
     :root {
-      --bg: #f4f1ec;
-      --panel: #fff;
-      --ink: #1c1917;
-      --muted: #78716c;
-      --line: #e7e5e4;
-      --brand: #1a4d3a;
-      --ok: #166534;
-      --code-bg: #1c1917;
-      --code-ink: #e7e5e4;
+      --bg: #f6f6f7;
+      --surface: #fff;
+      --text: #202223;
+      --muted: #6d7175;
+      --line: #e1e3e5;
+      --green: #008060;
+      --green-soft: #e3f1ed;
+      --blue: #2c6ecb;
+      --blue-soft: #eaf0fb;
+      --red: #d72c0d;
+      --red-soft: #fbeae5;
+      --code-bg: #1a1c1d;
+      --code-ink: #e8e8e8;
+      --nav: #1a1c1d;
     }
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
     body {
       margin: 0;
-      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-      color: var(--ink);
+      font-family: Inter, "Segoe UI", system-ui, sans-serif;
+      color: var(--text);
       background: var(--bg);
-      line-height: 1.55;
+      line-height: 1.5;
     }
-    .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
-    nav {
+    .top {
       position: sticky;
       top: 0;
-      height: 100vh;
-      overflow: auto;
-      background: var(--brand);
-      color: #fafaf9;
-      padding: 24px 16px 40px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 24px;
+      background: var(--nav);
+      color: #fff;
     }
-    nav h1 { font-size: 14px; margin: 0 0 6px; letter-spacing: 0.04em; text-transform: uppercase; }
-    nav p { margin: 0 0 20px; font-size: 12px; color: #d6d3d1; }
+    .top strong { font-size: 14px; letter-spacing: 0.02em; }
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #3d4043;
+      color: #d2d5d8;
+    }
+    .shell { display: grid; grid-template-columns: 240px 1fr; min-height: calc(100vh - 48px); }
+    nav {
+      position: sticky;
+      top: 48px;
+      height: calc(100vh - 48px);
+      overflow: auto;
+      background: var(--surface);
+      border-right: 1px solid var(--line);
+      padding: 20px 12px 40px;
+    }
+    nav .label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 12px 10px 6px;
+    }
     nav a {
-      display: block;
-      color: #e7e5e4;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
       text-decoration: none;
       font-size: 13px;
       padding: 7px 10px;
       border-radius: 8px;
     }
-    nav a:hover { background: rgba(255,255,255,.12); }
-    main { max-width: 860px; padding: 40px 32px 80px; }
-    .hero, article.step {
-      background: var(--panel);
+    nav a:hover { background: var(--bg); }
+    main { max-width: 980px; padding: 32px 40px 80px; }
+    h1 { font-size: 32px; margin: 0 0 8px; letter-spacing: -0.03em; }
+    h2 { font-size: 22px; margin: 0 0 10px; }
+    h3 { font-size: 16px; margin: 20px 0 8px; }
+    p, li { color: #303030; }
+    .lead { font-size: 16px; color: var(--muted); max-width: 720px; }
+    .card {
+      background: var(--surface);
       border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 24px;
-      margin-bottom: 18px;
-    }
-    .hero { padding: 28px; margin-bottom: 28px; }
-    .hero h2 { margin: 0 0 8px; font-size: 26px; }
-    .hero p, article.step p, article.step li { color: #44403c; }
-    article.step h2 { margin: 0 0 10px; font-size: 20px; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
-    th { background: #fafaf9; }
-    .note {
-      background: #fafaf9;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px 12px;
-      font-size: 14px;
-    }
-    .code-wrap {
-      margin: 14px 0 4px;
       border-radius: 12px;
-      overflow: hidden;
-      border: 1px solid #292524;
+      padding: 20px 22px;
+      margin: 16px 0 28px;
     }
+    .method {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      padding: 3px 7px;
+      border-radius: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .method.post { background: var(--green-soft); color: var(--green); }
+    .method.get { background: var(--blue-soft); color: var(--blue); }
+    .method.delete { background: var(--red-soft); color: var(--red); }
+    .path {
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 13px;
+      background: var(--bg);
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      margin: 8px 0 14px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th, td { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; font-weight: 700; }
+    code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+    p code, td code, li code {
+      background: var(--bg);
+      padding: 1px 5px;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+    }
+    .tabs { display: flex; gap: 4px; padding: 8px 10px 0; background: #111; border-radius: 12px 12px 0 0; }
+    .tabs button {
+      border: 0;
+      background: transparent;
+      color: #9ea3a8;
+      font-weight: 700;
+      font-size: 12px;
+      padding: 8px 10px;
+      cursor: pointer;
+      border-radius: 8px 8px 0 0;
+    }
+    .tabs button.active { background: var(--code-bg); color: #fff; }
+    .code-wrap { margin: 0 0 8px; border-radius: 0 0 12px 12px; overflow: hidden; border: 1px solid #111; }
     .code-toolbar {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      background: #292524;
-      color: #d6d3d1;
-      padding: 8px 12px;
+      background: var(--code-bg);
+      color: #9ea3a8;
+      padding: 6px 12px;
       font-size: 12px;
     }
-    .file { font-family: ui-monospace, Menlo, monospace; }
     .copy-btn {
       border: 0;
       cursor: pointer;
-      border-radius: 8px;
-      padding: 6px 10px;
-      font-weight: 600;
+      border-radius: 6px;
+      padding: 5px 9px;
+      font-weight: 700;
       font-size: 12px;
     }
-    .copy-btn.copied { background: #bbf7d0; color: var(--ok); }
+    .copy-btn.copied { background: #bbf7d0; }
     pre {
       margin: 0;
-      padding: 16px;
+      padding: 14px 16px 16px;
       overflow: auto;
       background: var(--code-bg);
       color: var(--code-ink);
       font-size: 12.5px;
       line-height: 1.45;
     }
-    code { font-family: ui-monospace, Menlo, Consolas, monospace; }
-    @media (max-width: 860px) {
-      .layout { grid-template-columns: 1fr; }
-      nav { position: relative; height: auto; }
-      main { padding: 20px 16px 60px; }
+    .pane { display: none; }
+    .pane.active { display: block; }
+    .note {
+      background: #fff8e6;
+      border: 1px solid #f3dd99;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    @media (max-width: 900px) {
+      .shell { grid-template-columns: 1fr; }
+      nav { position: relative; top: 0; height: auto; }
+      main { padding: 20px 16px 64px; }
     }
   </style>
 </head>
 <body>
-  <div class="layout">
+  <div class="top">
+    <strong>Salty HUB · Wishlist Webhooks API</strong>
+    <span class="badge">HTTPS JSON</span>
+  </div>
+  <div class="shell">
     <nav>
-      <h1>Wishlist webhooks</h1>
-      <p>Developer guide</p>
-      <a href="#start">1. Start here</a>
-      <a href="#topics">2. Topics</a>
-      <a href="#register">3. Register</a>
-      <a href="#secret">4. Save the secret</a>
-      <a href="#receive">5. What you receive</a>
-      <a href="#verify">6. Verify</a>
-      <a href="#payloads">7. Payloads</a>
-      <a href="#list">8. List / delete</a>
-      <a href="#errors">9. Errors</a>
+      <div class="label">Getting started</div>
+      <a href="#overview">Overview</a>
+      <a href="#auth">Authentication</a>
+      <div class="label">Admin endpoints</div>
+      <a href="#create"><span class="method post">POST</span> Create</a>
+      <a href="#list"><span class="method get">GET</span> List</a>
+      <a href="#delete"><span class="method delete">DEL</span> Delete</a>
+      <div class="label">Topics</div>
+      <a href="#created">wishlist/created</a>
+      <a href="#updated">wishlist/updated</a>
+      <a href="#cleared">wishlist/cleared</a>
+      <a href="#item-added">wishlist/item-added</a>
+      <a href="#item-removed">wishlist/item-removed</a>
+      <div class="label">Reference</div>
+      <a href="#objects">Objects</a>
+      <a href="#verify">Verify delivery</a>
+      <a href="#errors">Errors</a>
     </nav>
     <main>
-      <section class="hero" id="start">
-        <h2>Wishlist webhooks</h2>
-        <p>Use this if you want Salty HUB to notify your app when a customer wishlist changes.</p>
-        <p>You send us a <strong>topic</strong> and your HTTPS <strong>address</strong>. We POST JSON to that address.</p>
-        <p><strong>Base URL:</strong> <code>https://personalize.salty.co.in</code></p>
-        <table>
-          <thead><tr><th>What</th><th>URL</th></tr></thead>
-          <tbody>
-            <tr><td>Create webhook</td><td><code>POST /api/wishlist-webhooks</code></td></tr>
-            <tr><td>List webhooks</td><td><code>GET /api/wishlist-webhooks</code></td></tr>
-            <tr><td>Delete webhook</td><td><code>DELETE /api/wishlist-webhooks</code></td></tr>
-          </tbody>
-        </table>
+      <section id="overview">
+        <h1>Wishlist Webhooks API</h1>
+        <p class="lead">Register an HTTPS endpoint for a topic. When a customer wishlist changes, Salty HUB sends a signed JSON POST to that address. The payload includes shop, customer, and product objects.</p>
+        <div class="card">
+          <p><strong>Base URL</strong></p>
+          <div class="path">https://personalize.salty.co.in</div>
+          <p>Content type: <code>application/json</code>. Register one subscription per topic. You can reuse the same address for all five topics.</p>
+        </div>
       </section>
 
-      <article class="step" id="topics">
-        <h2>2. Topics</h2>
-        <p>Register one webhook per topic. Same address can be used for all five.</p>
-        <table>
-          <thead><tr><th>topic</th><th>When we call you</th></tr></thead>
-          <tbody>
-            <tr><td><code>wishlist/created</code></td><td>New wishlist is created</td></tr>
-            <tr><td><code>wishlist/updated</code></td><td>Full list is replaced</td></tr>
-            <tr><td><code>wishlist/cleared</code></td><td>Wishlist is deleted</td></tr>
-            <tr><td><code>wishlist/item-added</code></td><td>Product is added</td></tr>
-            <tr><td><code>wishlist/item-removed</code></td><td>Product is removed</td></tr>
-          </tbody>
-        </table>
-      </article>
+      <section id="auth">
+        <h2>Authentication</h2>
+        <div class="card">
+          <p>Create and list endpoints are open HTTPS APIs. Incoming deliveries are authenticated with HMAC.</p>
+          <ol>
+            <li>Create a webhook and save <code>webhook.secret</code>. It is returned only on create.</li>
+            <li>On each delivery, hash the <strong>raw body</strong> with HMAC-SHA256 using that secret.</li>
+            <li>Base64-encode the digest and compare it to <code>X-Wishlist-Hmac-Sha256</code>.</li>
+          </ol>
+          <p class="note">Do not parse JSON before computing the HMAC. If the body is modified, verification fails.</p>
+        </div>
+      </section>
 
-      <article class="step" id="register">
-        <h2>3. Register</h2>
-        <p><code>POST https://personalize.salty.co.in/api/wishlist-webhooks</code></p>
-        <p>Send JSON. <code>address</code> must be <code>https://</code>.</p>
-        <div class="code-wrap">
-          <div class="code-toolbar">
-            <span class="file">request</span>
-            <button type="button" class="copy-btn" data-copy>Copy</button>
+      <section id="create">
+        <h2>Create a webhook</h2>
+        <div class="card">
+          <span class="method post">POST</span>
+          <div class="path">/api/wishlist-webhooks</div>
+          <h3>Request body</h3>
+          <table>
+            <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>topic</code></td><td>string</td><td>Yes</td><td>One of the five wishlist topics.</td></tr>
+              <tr><td><code>address</code></td><td>string</td><td>Yes</td><td>HTTPS URL that receives deliveries. <code>http://localhost</code> is allowed for local tests.</td></tr>
+              <tr><td><code>format</code></td><td>string</td><td>No</td><td>Must be <code>json</code>.</td></tr>
+            </tbody>
+          </table>
+          <h3>Response</h3>
+          <p><code>201</code> when created. <code>200</code> if the same topic and address already exist (no new secret).</p>
+          <div class="tabs" data-tabs="create">
+            <button type="button" data-lang="curl" class="active">cURL</button>
+            <button type="button" data-lang="node">Node</button>
+            <button type="button" data-lang="php">PHP</button>
           </div>
-          <pre><code class="language-bash">curl -X POST https://personalize.salty.co.in/api/wishlist-webhooks \
+          <div class="pane active" data-tabs="create" data-lang="curl">
+            <div class="code-wrap">
+              <div class="code-toolbar"><span>create webhook</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+              <pre><code>curl -X POST https://personalize.salty.co.in/api/wishlist-webhooks \
   -H "Content-Type: application/json" \
   -d '{
     "topic": "wishlist/item-added",
     "address": "https://your-app.com/webhooks/wishlist"
   }'</code></pre>
-        </div>
-        <div class="code-wrap">
-          <div class="code-toolbar">
-            <span class="file">response 201</span>
-            <button type="button" class="copy-btn" data-copy>Copy</button>
+            </div>
           </div>
-          <pre><code class="language-json">{
+          <div class="pane" data-tabs="create" data-lang="node">
+            <div class="code-wrap">
+              <div class="code-toolbar"><span>create webhook</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+              <pre><code>const response = await fetch(
+  "https://personalize.salty.co.in/api/wishlist-webhooks",
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      topic: "wishlist/item-added",
+      address: "https://your-app.com/webhooks/wishlist",
+    }),
+  },
+);
+const json = await response.json();
+// json.webhook.secret — store this
+console.log(json.webhook.id, json.webhook.secret);</code></pre>
+            </div>
+          </div>
+          <div class="pane" data-tabs="create" data-lang="php">
+            <div class="code-wrap">
+              <div class="code-toolbar"><span>create webhook</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+              <pre><code>$ch = curl_init("https://personalize.salty.co.in/api/wishlist-webhooks");
+curl_setopt_array($ch, [
+  CURLOPT_POST =&gt; true,
+  CURLOPT_HTTPHEADER =&gt; ["Content-Type: application/json"],
+  CURLOPT_POSTFIELDS =&gt; json_encode([
+    "topic" =&gt; "wishlist/item-added",
+    "address" =&gt; "https://your-app.com/webhooks/wishlist",
+  ]),
+  CURLOPT_RETURNTRANSFER =&gt; true,
+]);
+$json = json_decode(curl_exec($ch), true);
+// $json["webhook"]["secret"]</code></pre>
+            </div>
+          </div>
+          <h3>Example response</h3>
+          <div class="code-wrap">
+            <div class="code-toolbar"><span>201 Created</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+            <pre><code>{
   "ok": true,
   "created": true,
   "webhook": {
@@ -189,39 +312,120 @@
     "created_at": "2026-09-17T07:30:00.000Z"
   }
 }</code></pre>
-        </div>
-      </article>
-
-      <article class="step" id="secret">
-        <h2>4. Save the secret</h2>
-        <p class="note"><code>webhook.secret</code> is shown <strong>only when you create</strong> the webhook. Put it in your app env. Do not commit it. We never send it again on list.</p>
-        <p>If you lose it, delete the webhook and register again.</p>
-      </article>
-
-      <article class="step" id="receive">
-        <h2>5. What you receive</h2>
-        <p>When the topic happens, we POST to your address.</p>
-        <p>Headers:</p>
-        <table>
-          <thead><tr><th>Header</th><th>Meaning</th></tr></thead>
-          <tbody>
-            <tr><td><code>Content-Type</code></td><td><code>application/json</code></td></tr>
-            <tr><td><code>X-Wishlist-Topic</code></td><td>Topic name, e.g. <code>wishlist/item-added</code></td></tr>
-            <tr><td><code>X-Wishlist-Webhook-Id</code></td><td>Your webhook id</td></tr>
-            <tr><td><code>X-Wishlist-Triggered-At</code></td><td>ISO time</td></tr>
-            <tr><td><code>X-Wishlist-Hmac-Sha256</code></td><td>Base64 HMAC of the raw body</td></tr>
-          </tbody>
-        </table>
-        <p>Body includes shop, customer, and full product objects (not only handles):</p>
-        <div class="code-wrap">
-          <div class="code-toolbar">
-            <span class="file">body</span>
-            <button type="button" class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><code class="language-json">{
-  "topic": "wishlist/item-added",
-  "event": "wishlist/item-added",
-  "created_at": "2026-09-17T07:31:12.000Z",
+        </div>
+      </section>
+
+      <section id="list">
+        <h2>List webhooks</h2>
+        <div class="card">
+          <span class="method get">GET</span>
+          <div class="path">/api/wishlist-webhooks</div>
+          <table>
+            <thead><tr><th>Query</th><th>Type</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>topic</code></td><td>string</td><td>Optional filter, for example <code>wishlist/created</code>.</td></tr>
+            </tbody>
+          </table>
+          <p>The list response does not include <code>secret</code>.</p>
+          <div class="tabs" data-tabs="list">
+            <button type="button" data-lang="curl" class="active">cURL</button>
+            <button type="button" data-lang="node">Node</button>
+            <button type="button" data-lang="php">PHP</button>
+          </div>
+          <div class="pane active" data-tabs="list" data-lang="curl">
+            <div class="code-wrap">
+              <div class="code-toolbar"><span>list</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+              <pre><code>curl "https://personalize.salty.co.in/api/wishlist-webhooks"
+curl "https://personalize.salty.co.in/api/wishlist-webhooks?topic=wishlist/created"</code></pre>
+            </div>
+          </div>
+          <div class="pane" data-tabs="list" data-lang="node">
+            <div class="code-wrap">
+              <div class="code-toolbar"><span>list</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+              <pre><code>const res = await fetch(
+  "https://personalize.salty.co.in/api/wishlist-webhooks?topic=wishlist/created",
+);
+const { topics, webhooks } = await res.json();</code></pre>
+            </div>
+          </div>
+          <div class="pane" data-tabs="list" data-lang="php">
+            <div class="code-wrap">
+              <div class="code-toolbar"><span>list</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+              <pre><code>$json = json_decode(file_get_contents(
+  "https://personalize.salty.co.in/api/wishlist-webhooks"
+), true);</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="delete">
+        <h2>Delete a webhook</h2>
+        <div class="card">
+          <span class="method delete">DELETE</span>
+          <div class="path">/api/wishlist-webhooks</div>
+          <p>Pass <code>id</code>, or pass <code>topic</code> and <code>address</code> together.</p>
+          <div class="tabs" data-tabs="delete">
+            <button type="button" data-lang="curl" class="active">cURL</button>
+            <button type="button" data-lang="node">Node</button>
+            <button type="button" data-lang="php">PHP</button>
+          </div>
+          <div class="pane active" data-tabs="delete" data-lang="curl">
+            <div class="code-wrap">
+              <div class="code-toolbar"><span>delete</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+              <pre><code>curl -X DELETE "https://personalize.salty.co.in/api/wishlist-webhooks?id=WEBHOOK_ID"
+
+curl -X DELETE https://personalize.salty.co.in/api/wishlist-webhooks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "wishlist/created",
+    "address": "https://your-app.com/webhooks/wishlist"
+  }'</code></pre>
+            </div>
+          </div>
+          <div class="pane" data-tabs="delete" data-lang="node">
+            <div class="code-wrap">
+              <div class="code-toolbar"><span>delete</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+              <pre><code>await fetch(
+  "https://personalize.salty.co.in/api/wishlist-webhooks?id=WEBHOOK_ID",
+  { method: "DELETE" },
+);</code></pre>
+            </div>
+          </div>
+          <div class="pane" data-tabs="delete" data-lang="php">
+            <div class="code-wrap">
+              <div class="code-toolbar"><span>delete</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+              <pre><code>$ch = curl_init("https://personalize.salty.co.in/api/wishlist-webhooks?id=WEBHOOK_ID");
+curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE");
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_exec($ch);</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="created">
+        <h2>wishlist/created</h2>
+        <div class="card">
+          <p>Sent when a customer wishlist is created for the first time. <code>data.products</code> is the full list.</p>
+          <h3>Delivery headers</h3>
+          <table>
+            <thead><tr><th>Header</th><th>Example</th></tr></thead>
+            <tbody>
+              <tr><td><code>X-Wishlist-Topic</code></td><td><code>wishlist/created</code></td></tr>
+              <tr><td><code>X-Wishlist-Webhook-Id</code></td><td>Subscription id</td></tr>
+              <tr><td><code>X-Wishlist-Triggered-At</code></td><td>ISO-8601 timestamp</td></tr>
+              <tr><td><code>X-Wishlist-Hmac-Sha256</code></td><td>Base64 HMAC of the raw body</td></tr>
+            </tbody>
+          </table>
+          <h3>Example payload</h3>
+          <div class="code-wrap">
+            <div class="code-toolbar"><span>wishlist/created</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+            <pre><code>{
+  "topic": "wishlist/created",
+  "event": "wishlist/created",
+  "created_at": "2026-09-17T10:04:11.000Z",
   "data": {
     "shop": {
       "name": "Salty",
@@ -239,68 +443,306 @@
       "phone": "+919999999999"
     },
     "customerId": "1234567890",
-    "handles": ["serum-handle", "face-wash"],
+    "handles": ["vitamin-c-serum"],
     "products": [
       {
         "id": "8877665544",
         "gid": "gid://shopify/Product/8877665544",
         "title": "Vitamin C Serum",
-        "handle": "serum-handle",
+        "handle": "vitamin-c-serum",
         "vendor": "Salty",
         "productType": "Skincare",
         "status": "ACTIVE",
-        "tags": ["serum", "face"],
-        "url": "https://salty.co.in/products/serum-handle",
-        "image": {
-          "url": "https://cdn.shopify.com/s/files/1/serum.jpg",
-          "alt": "Vitamin C Serum"
-        },
+        "tags": ["serum"],
+        "url": "https://salty.co.in/products/vitamin-c-serum",
+        "image": { "url": "https://cdn.shopify.com/s/files/1/serum.jpg", "alt": "Vitamin C Serum" },
         "price": "899.00",
-        "currency": "INR"
-      }
-    ],
-    "addedHandles": ["face-wash"],
-    "added": [
-      {
-        "id": "8877665555",
-        "gid": "gid://shopify/Product/8877665555",
-        "title": "Face Wash",
-        "handle": "face-wash",
-        "vendor": "Salty",
-        "productType": "Skincare",
-        "status": "ACTIVE",
-        "tags": ["cleanser"],
-        "url": "https://salty.co.in/products/face-wash",
-        "image": {
-          "url": "https://cdn.shopify.com/s/files/1/face-wash.jpg",
-          "alt": "Face Wash"
-        },
-        "price": "449.00",
         "currency": "INR"
       }
     ]
   }
 }</code></pre>
-        </div>
-        <p>Reply with HTTP <code>200</code> quickly. Use <code>data.products</code> and <code>data.customer</code> — you do not need to look up the handle yourself.</p>
-      </article>
-
-      <article class="step" id="verify">
-        <h2>6. Verify (required)</h2>
-        <p>This proves the POST came from us, not a random caller.</p>
-        <ol>
-          <li>Read the request body as a <strong>raw string</strong> (do not JSON.parse first).</li>
-          <li>Read header <code>X-Wishlist-Hmac-Sha256</code>.</li>
-          <li>HMAC-SHA256 the raw body with your <code>secret</code>.</li>
-          <li>Encode that HMAC as <strong>Base64</strong>.</li>
-          <li>If it matches the header, process the event. If not, return <code>401</code>.</li>
-        </ol>
-        <div class="code-wrap">
-          <div class="code-toolbar">
-            <span class="file">Node / Express</span>
-            <button type="button" class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><code class="language-js">import crypto from "node:crypto";
+        </div>
+      </section>
+
+      <section id="updated">
+        <h2>wishlist/updated</h2>
+        <div class="card">
+          <p>Sent when the full wishlist is replaced. Use this when the storefront saves the complete handle list.</p>
+          <h3>Example payload</h3>
+          <div class="code-wrap">
+            <div class="code-toolbar"><span>wishlist/updated</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+            <pre><code>{
+  "topic": "wishlist/updated",
+  "event": "wishlist/updated",
+  "created_at": "2026-09-17T10:12:40.000Z",
+  "data": {
+    "shop": {
+      "name": "Salty",
+      "domain": "salty.co.in",
+      "url": "https://salty.co.in",
+      "myshopifyDomain": "salty-store.myshopify.com"
+    },
+    "customer": {
+      "id": "1234567890",
+      "gid": "gid://shopify/Customer/1234567890",
+      "firstName": "Arjun",
+      "lastName": "Mehta",
+      "name": "Arjun Mehta",
+      "email": "arjun@example.com",
+      "phone": "+918888888888"
+    },
+    "customerId": "1234567890",
+    "handles": ["vitamin-c-serum", "gentle-face-wash"],
+    "products": [
+      {
+        "id": "8877665544",
+        "title": "Vitamin C Serum",
+        "handle": "vitamin-c-serum",
+        "price": "899.00",
+        "currency": "INR",
+        "url": "https://salty.co.in/products/vitamin-c-serum",
+        "image": { "url": "https://cdn.shopify.com/s/files/1/serum.jpg", "alt": "Vitamin C Serum" }
+      },
+      {
+        "id": "8877665555",
+        "title": "Gentle Face Wash",
+        "handle": "gentle-face-wash",
+        "price": "449.00",
+        "currency": "INR",
+        "url": "https://salty.co.in/products/gentle-face-wash",
+        "image": { "url": "https://cdn.shopify.com/s/files/1/face-wash.jpg", "alt": "Gentle Face Wash" }
+      }
+    ]
+  }
+}</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="cleared">
+        <h2>wishlist/cleared</h2>
+        <div class="card">
+          <p>Sent when the wishlist is deleted. Customer details are still included. <code>products</code> is an empty array.</p>
+          <h3>Example payload</h3>
+          <div class="code-wrap">
+            <div class="code-toolbar"><span>wishlist/cleared</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+            <pre><code>{
+  "topic": "wishlist/cleared",
+  "event": "wishlist/cleared",
+  "created_at": "2026-09-17T11:02:09.000Z",
+  "data": {
+    "shop": {
+      "name": "Salty",
+      "domain": "salty.co.in",
+      "url": "https://salty.co.in",
+      "myshopifyDomain": "salty-store.myshopify.com"
+    },
+    "customer": {
+      "id": "5566778899",
+      "gid": "gid://shopify/Customer/5566778899",
+      "firstName": "Neha",
+      "lastName": "Kapoor",
+      "name": "Neha Kapoor",
+      "email": "neha@example.com",
+      "phone": ""
+    },
+    "customerId": "5566778899",
+    "handles": [],
+    "products": []
+  }
+}</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="item-added">
+        <h2>wishlist/item-added</h2>
+        <div class="card">
+          <p>Sent when one or more products are added. <code>products</code> is the full wishlist. <code>added</code> contains only the new product objects.</p>
+          <h3>Example payload</h3>
+          <div class="code-wrap">
+            <div class="code-toolbar"><span>wishlist/item-added</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+            <pre><code>{
+  "topic": "wishlist/item-added",
+  "event": "wishlist/item-added",
+  "created_at": "2026-09-17T12:18:33.000Z",
+  "data": {
+    "shop": {
+      "name": "Salty",
+      "domain": "salty.co.in",
+      "url": "https://salty.co.in",
+      "myshopifyDomain": "salty-store.myshopify.com"
+    },
+    "customer": {
+      "id": "1234567890",
+      "gid": "gid://shopify/Customer/1234567890",
+      "firstName": "Riya",
+      "lastName": "Shah",
+      "name": "Riya Shah",
+      "email": "riya@example.com",
+      "phone": "+919999999999"
+    },
+    "customerId": "1234567890",
+    "handles": ["vitamin-c-serum", "night-cream"],
+    "products": [
+      {
+        "id": "8877665544",
+        "title": "Vitamin C Serum",
+        "handle": "vitamin-c-serum",
+        "price": "899.00",
+        "currency": "INR",
+        "url": "https://salty.co.in/products/vitamin-c-serum",
+        "image": { "url": "https://cdn.shopify.com/s/files/1/serum.jpg", "alt": "Vitamin C Serum" }
+      },
+      {
+        "id": "8877665566",
+        "title": "Night Cream",
+        "handle": "night-cream",
+        "price": "1299.00",
+        "currency": "INR",
+        "url": "https://salty.co.in/products/night-cream",
+        "image": { "url": "https://cdn.shopify.com/s/files/1/night-cream.jpg", "alt": "Night Cream" }
+      }
+    ],
+    "addedHandles": ["night-cream"],
+    "added": [
+      {
+        "id": "8877665566",
+        "gid": "gid://shopify/Product/8877665566",
+        "title": "Night Cream",
+        "handle": "night-cream",
+        "vendor": "Salty",
+        "productType": "Skincare",
+        "status": "ACTIVE",
+        "tags": ["night", "cream"],
+        "url": "https://salty.co.in/products/night-cream",
+        "image": { "url": "https://cdn.shopify.com/s/files/1/night-cream.jpg", "alt": "Night Cream" },
+        "price": "1299.00",
+        "currency": "INR"
+      }
+    ]
+  }
+}</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="item-removed">
+        <h2>wishlist/item-removed</h2>
+        <div class="card">
+          <p>Sent when products are removed. <code>products</code> is what remains. <code>removed</code> is the product objects that were taken off.</p>
+          <h3>Example payload</h3>
+          <div class="code-wrap">
+            <div class="code-toolbar"><span>wishlist/item-removed</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+            <pre><code>{
+  "topic": "wishlist/item-removed",
+  "event": "wishlist/item-removed",
+  "created_at": "2026-09-17T12:41:02.000Z",
+  "data": {
+    "shop": {
+      "name": "Salty",
+      "domain": "salty.co.in",
+      "url": "https://salty.co.in",
+      "myshopifyDomain": "salty-store.myshopify.com"
+    },
+    "customer": {
+      "id": "9988776655",
+      "gid": "gid://shopify/Customer/9988776655",
+      "firstName": "Kabir",
+      "lastName": "Singh",
+      "name": "Kabir Singh",
+      "email": "kabir@example.com",
+      "phone": "+917777777777"
+    },
+    "customerId": "9988776655",
+    "handles": ["vitamin-c-serum"],
+    "products": [
+      {
+        "id": "8877665544",
+        "title": "Vitamin C Serum",
+        "handle": "vitamin-c-serum",
+        "price": "899.00",
+        "currency": "INR",
+        "url": "https://salty.co.in/products/vitamin-c-serum",
+        "image": { "url": "https://cdn.shopify.com/s/files/1/serum.jpg", "alt": "Vitamin C Serum" }
+      }
+    ],
+    "removedHandles": ["lip-balm"],
+    "removed": [
+      {
+        "id": "8877665577",
+        "gid": "gid://shopify/Product/8877665577",
+        "title": "Lip Balm",
+        "handle": "lip-balm",
+        "vendor": "Salty",
+        "productType": "Skincare",
+        "status": "ACTIVE",
+        "tags": ["lips"],
+        "url": "https://salty.co.in/products/lip-balm",
+        "image": { "url": "https://cdn.shopify.com/s/files/1/lip-balm.jpg", "alt": "Lip Balm" },
+        "price": "199.00",
+        "currency": "INR"
+      }
+    ]
+  }
+}</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="objects">
+        <h2>Objects</h2>
+        <div class="card">
+          <h3>Customer</h3>
+          <table>
+            <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>id</code></td><td>string</td><td>Numeric Shopify customer id</td></tr>
+              <tr><td><code>gid</code></td><td>string</td><td>GraphQL id</td></tr>
+              <tr><td><code>firstName</code>, <code>lastName</code>, <code>name</code></td><td>string</td><td>Display name fields</td></tr>
+              <tr><td><code>email</code></td><td>string</td><td>May be empty if not approved</td></tr>
+              <tr><td><code>phone</code></td><td>string</td><td>May be empty</td></tr>
+            </tbody>
+          </table>
+          <h3>Product</h3>
+          <table>
+            <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>id</code>, <code>gid</code></td><td>string</td><td>Shopify product ids</td></tr>
+              <tr><td><code>title</code>, <code>handle</code></td><td>string</td><td>Catalog title and handle</td></tr>
+              <tr><td><code>vendor</code>, <code>productType</code>, <code>status</code>, <code>tags</code></td><td>mixed</td><td>Catalog metadata</td></tr>
+              <tr><td><code>url</code></td><td>string</td><td>Storefront product URL, or null if unpublished</td></tr>
+              <tr><td><code>image.url</code>, <code>image.alt</code></td><td>string</td><td>Featured image</td></tr>
+              <tr><td><code>price</code>, <code>currency</code></td><td>string</td><td>Minimum variant price</td></tr>
+            </tbody>
+          </table>
+          <h3>Shop</h3>
+          <table>
+            <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>name</code></td><td>string</td><td>Shop name</td></tr>
+              <tr><td><code>domain</code>, <code>url</code></td><td>string</td><td>Primary domain</td></tr>
+              <tr><td><code>myshopifyDomain</code></td><td>string</td><td><code>*.myshopify.com</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="verify">
+        <h2>Verify a delivery</h2>
+        <div class="card">
+          <p>Your endpoint must read the raw body, verify HMAC, then parse JSON. Return <code>200</code> quickly.</p>
+          <div class="tabs" data-tabs="verify">
+            <button type="button" data-lang="node" class="active">Node</button>
+            <button type="button" data-lang="php">PHP</button>
+            <button type="button" data-lang="curl">cURL test</button>
+          </div>
+          <div class="pane active" data-tabs="verify" data-lang="node">
+            <div class="code-wrap">
+              <div class="code-toolbar"><span>Express receiver</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+              <pre><code>import crypto from "node:crypto";
 import express from "express";
 
 const app = express();
@@ -324,110 +766,81 @@ app.post(
     if (!isValid(rawBody, req.get("X-Wishlist-Hmac-Sha256"))) {
       return res.status(401).send("Invalid HMAC");
     }
-
     const payload = JSON.parse(rawBody);
-
     if (payload.topic === "wishlist/item-added") {
-      // payload.data.customer.email
-      // payload.data.added[0].title
-      // payload.data.added[0].price
-      // payload.data.products
+      const product = payload.data.added[0];
+      console.log(payload.data.customer.email, product.title, product.price);
     }
-
     res.status(200).send("ok");
   },
 );
 
 app.listen(3000);</code></pre>
-        </div>
-        <p class="note">Use <code>express.raw</code> on this route. If Express parses JSON first, HMAC will fail.</p>
-      </article>
+            </div>
+          </div>
+          <div class="pane" data-tabs="verify" data-lang="php">
+            <div class="code-wrap">
+              <div class="code-toolbar"><span>PHP receiver</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+              <pre><code>$secret = getenv("WISHLIST_WEBHOOK_SECRET");
+$rawBody = file_get_contents("php://input");
+$hmac = $_SERVER["HTTP_X_WISHLIST_HMAC_SHA256"] ?? "";
+$digest = base64_encode(hash_hmac("sha256", $rawBody, $secret, true));
 
-      <article class="step" id="payloads">
-        <h2>7. Payload per topic</h2>
-        <p>Every topic has <code>data.shop</code>, <code>data.customer</code>, and <code>data.products</code>. <code>handles</code> is also sent for convenience.</p>
-        <p>Each product object has: <code>id</code>, <code>gid</code>, <code>title</code>, <code>handle</code>, <code>vendor</code>, <code>productType</code>, <code>status</code>, <code>tags</code>, <code>url</code>, <code>image</code>, <code>price</code>, <code>currency</code>.</p>
-        <p>Each customer object has: <code>id</code>, <code>gid</code>, <code>firstName</code>, <code>lastName</code>, <code>name</code>, <code>email</code>, <code>phone</code>.</p>
-        <p><code>wishlist/created</code> and <code>wishlist/updated</code> — full current list in <code>products</code>.</p>
-        <div class="code-wrap">
-          <div class="code-toolbar">
-            <span class="file">data keys</span>
-            <button type="button" class="copy-btn" data-copy>Copy</button>
-          </div>
-          <pre><code class="language-json">{
-  "shop": { "name": "Salty", "domain": "salty.co.in", "url": "https://salty.co.in", "myshopifyDomain": "store.myshopify.com" },
-  "customer": { "id": "1234567890", "name": "Riya Shah", "email": "riya@example.com", "phone": "+919999999999" },
-  "customerId": "1234567890",
-  "handles": ["serum-handle"],
-  "products": [{ "title": "Vitamin C Serum", "handle": "serum-handle", "price": "899.00", "currency": "INR", "url": "https://salty.co.in/products/serum-handle", "image": { "url": "https://cdn.shopify.com/..." } }]
-}</code></pre>
-        </div>
-        <p><code>wishlist/cleared</code> — customer stays, products is empty.</p>
-        <div class="code-wrap">
-          <div class="code-toolbar">
-            <span class="file">data</span>
-            <button type="button" class="copy-btn" data-copy>Copy</button>
-          </div>
-          <pre><code class="language-json">{
-  "customer": { "id": "1234567890", "name": "Riya Shah", "email": "riya@example.com" },
-  "handles": [],
-  "products": []
-}</code></pre>
-        </div>
-        <p><code>wishlist/item-added</code> — <code>products</code> is the full list. <code>added</code> is only the new products (full objects). <code>addedHandles</code> is the handle list.</p>
-        <p><code>wishlist/item-removed</code> — <code>products</code> is what remains. <code>removed</code> is the products that were taken off (full objects if still in Shopify).</p>
-      </article>
+if (!hash_equals($digest, $hmac)) {
+  http_response_code(401);
+  echo "Invalid HMAC";
+  exit;
+}
 
-      <article class="step" id="list">
-        <h2>8. List and delete</h2>
-        <p>List (secret is not returned):</p>
-        <div class="code-wrap">
-          <div class="code-toolbar">
-            <span class="file">list</span>
-            <button type="button" class="copy-btn" data-copy>Copy</button>
+$payload = json_decode($rawBody, true);
+http_response_code(200);
+echo "ok";</code></pre>
+            </div>
           </div>
-          <pre><code class="language-bash">curl https://personalize.salty.co.in/api/wishlist-webhooks
-curl https://personalize.salty.co.in/api/wishlist-webhooks?topic=wishlist/item-added</code></pre>
-        </div>
-        <p>Delete by id, or by topic + address:</p>
-        <div class="code-wrap">
-          <div class="code-toolbar">
-            <span class="file">delete</span>
-            <button type="button" class="copy-btn" data-copy>Copy</button>
-          </div>
-          <pre><code class="language-bash">curl -X DELETE "https://personalize.salty.co.in/api/wishlist-webhooks?id=WEBHOOK_ID"
-
-curl -X DELETE https://personalize.salty.co.in/api/wishlist-webhooks \
+          <div class="pane" data-tabs="verify" data-lang="curl">
+            <div class="code-wrap">
+              <div class="code-toolbar"><span>POST a test body to your app</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+              <pre><code>curl -X POST https://your-app.com/webhooks/wishlist \
   -H "Content-Type: application/json" \
-  -d '{
-    "topic": "wishlist/item-added",
-    "address": "https://your-app.com/webhooks/wishlist"
-  }'</code></pre>
+  -H "X-Wishlist-Topic: wishlist/created" \
+  -d '{"topic":"wishlist/created","data":{"customerId":"1","products":[]}}'</code></pre>
+            </div>
+            <p class="note">A local test without a valid HMAC should return 401 from your receiver. Live deliveries from Salty HUB include a valid signature.</p>
+          </div>
         </div>
-      </article>
+      </section>
 
-      <article class="step" id="errors">
-        <h2>9. Errors</h2>
-        <table>
-          <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
-          <tbody>
-            <tr><td>400</td><td>Bad topic, or address is not https</td></tr>
-            <tr><td>201</td><td>Webhook created. Save <code>secret</code></td></tr>
-            <tr><td>200</td><td>Already registered, or list/delete ok. No new secret</td></tr>
-            <tr><td>401 on your side</td><td>HMAC did not match. Check raw body + secret</td></tr>
-          </tbody>
-        </table>
-        <p>Checklist:</p>
-        <ol>
-          <li>HTTPS endpoint is live and returns 200</li>
-          <li>You registered the topic you care about</li>
-          <li>You stored <code>webhook.secret</code></li>
-          <li>You verify HMAC on the raw body</li>
-        </ol>
-      </article>
+      <section id="errors">
+        <h2>Errors</h2>
+        <div class="card">
+          <table>
+            <thead><tr><th>Status</th><th>When</th></tr></thead>
+            <tbody>
+              <tr><td><code>400</code></td><td>Invalid topic, or address is not HTTPS</td></tr>
+              <tr><td><code>201</code></td><td>Webhook created. Save <code>secret</code></td></tr>
+              <tr><td><code>200</code></td><td>Already registered, or list/delete succeeded</td></tr>
+              <tr><td><code>401</code> on your app</td><td>HMAC mismatch. Check raw body and secret</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </main>
   </div>
   <script>
+    document.querySelectorAll(".tabs").forEach((tabs) => {
+      const group = tabs.dataset.tabs;
+      tabs.querySelectorAll("button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          tabs.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          document
+            .querySelectorAll('.pane[data-tabs="' + group + '"]')
+            .forEach((pane) => {
+              pane.classList.toggle("active", pane.dataset.lang === btn.dataset.lang);
+            });
+        });
+      });
+    });
     document.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-copy]");
       if (!btn) return;
