@@ -1,6 +1,7 @@
 import { jsonCors, optionsCors } from "../../cors.server";
 import {
   emitWishlistWebhook,
+  resolveShop,
   WISHLIST_EVENTS,
 } from "../../wishlist-webhooks.server";
 import {
@@ -61,8 +62,10 @@ export async function action({ request }) {
     }
 
     if (actionType === "remove" || handles.length === 0) {
+      const shop = await resolveShop(request, body);
       await deleteWishlistForCustomer(customerId);
       await emitWishlistWebhook(WISHLIST_EVENTS.cleared, {
+        shop,
         customerId,
         handles: [],
       });
@@ -75,10 +78,11 @@ export async function action({ request }) {
     }
 
     const existing = await findWishlistByCustomerId(customerId);
+    const shop = await resolveShop(request, body);
     await saveWishlistForCustomer(customerId, handles.join(","));
     await emitWishlistWebhook(
       existing ? WISHLIST_EVENTS.updated : WISHLIST_EVENTS.created,
-      { customerId, handles },
+      { shop, customerId, handles },
     );
     return jsonCors(
       request,

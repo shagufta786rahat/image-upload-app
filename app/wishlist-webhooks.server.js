@@ -1,8 +1,12 @@
 import crypto from "node:crypto";
+import {
+  buildWishlistWebhookData,
+  resolveShop,
+} from "./wishlist-webhook-payload.server";
 import { jsonCors, optionsCors } from "./cors.server";
 import {
-  addressesForTopic,
   signWebhookBody,
+  subscriptionsForTopic,
   WISHLIST_EVENTS,
 } from "./wishlist-webhook-subscriptions.server";
 import {
@@ -17,7 +21,7 @@ import {
 } from "./wishlist.server";
 
 export const METHODS = "GET, POST, OPTIONS";
-export { WISHLIST_EVENTS };
+export { WISHLIST_EVENTS, resolveShop };
 
 function webhookPayload(event, data) {
   return {
@@ -40,22 +44,35 @@ function envUrlsForEvent(event) {
 }
 
 export async function emitWishlistWebhook(event, data) {
-  const payload = webhookPayload(event, data);
+  const enriched = await buildWishlistWebhookData(data);
+  const payload = webhookPayload(event, enriched);
   const rawBody = JSON.stringify(payload);
-  const hmac = signWebhookBody(rawBody);
-  const registered = await addressesForTopic(event);
-  const urls = [...new Set([...registered, ...envUrlsForEvent(event)])];
-  if (!urls.length) return payload;
+  const registered = await subscriptionsForTopic(event);
+  const envSecret =
+    process.env.WISHLIST_WEBHOOK_SECRET || process.env.SHOPIFY_API_SECRET || "";
+  const envUrls = envUrlsForEvent(event).filter(
+    (url) => !registered.some((row) => row.address === url),
+  );
+  const destinations = [
+    ...registered,
+    ...envUrls.map((address) => ({
+      id: crypto.randomUUID(),
+      address,
+      secret: envSecret,
+    })),
+  ];
+  if (!destinations.length) return payload;
 
   await Promise.all(
-    urls.map(async (url) => {
+    destinations.map(async (destination) => {
+      const hmac = signWebhookBody(rawBody, destination.secret);
       try {
-        const response = await fetch(url, {
+        const response = await fetch(destination.address, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "X-Wishlist-Topic": event,
-            "X-Wishlist-Webhook-Id": crypto.randomUUID(),
+            "X-Wishlist-Webhook-Id": destination.id || crypto.randomUUID(),
             "X-Wishlist-Triggered-At": payload.created_at,
             ...(hmac ? { "X-Wishlist-Hmac-Sha256": hmac } : {}),
           },
@@ -63,11 +80,14 @@ export async function emitWishlistWebhook(event, data) {
         });
         if (!response.ok) {
           console.error(
-            `Wishlist webhook ${event} failed for ${url}: ${response.status}`,
+            `Wishlist webhook ${event} failed for ${destination.address}: ${response.status}`,
           );
         }
       } catch (error) {
-        console.error(`Wishlist webhook ${event} failed for ${url}:`, error);
+        console.error(
+          `Wishlist webhook ${event} failed for ${destination.address}:`,
+          error,
+        );
       }
     }),
   );
@@ -91,7 +111,7 @@ function fail(status, error) {
   return { ok: false, status, error };
 }
 
-export async function handleWishlistCreated(body) {
+export async function handleWishlistCreated(body, { shop } = {}) {
   const customerId = customerIdString(body.customerId);
   const handles = readHandles(body);
   if (!customerId || customerId === "null") return fail(400, "Missing customerId");
@@ -103,27 +123,36 @@ export async function handleWishlistCreated(body) {
   }
 
   await saveWishlistForCustomer(customerId, handles.join(","));
-  await emitWishlistWebhook(WISHLIST_EVENTS.created, { customerId, handles });
+  await emitWishlistWebhook(WISHLIST_EVENTS.created, {
+    shop,
+    customerId,
+    handles,
+  });
   return ok(WISHLIST_EVENTS.created, "Wishlist created", { customerId, handles });
 }
 
-export async function handleWishlistUpdated(body) {
+export async function handleWishlistUpdated(body, { shop } = {}) {
   const customerId = customerIdString(body.customerId);
   const handles = readHandles(body);
   if (!customerId || customerId === "null") return fail(400, "Missing customerId");
   if (!handles.length) return fail(400, "Missing productHandle");
 
   await saveWishlistForCustomer(customerId, handles.join(","));
-  await emitWishlistWebhook(WISHLIST_EVENTS.updated, { customerId, handles });
+  await emitWishlistWebhook(WISHLIST_EVENTS.updated, {
+    shop,
+    customerId,
+    handles,
+  });
   return ok(WISHLIST_EVENTS.updated, "Wishlist updated", { customerId, handles });
 }
 
-export async function handleWishlistCleared(body) {
+export async function handleWishlistCleared(body, { shop } = {}) {
   const customerId = customerIdString(body.customerId);
   if (!customerId || customerId === "null") return fail(400, "Missing customerId");
 
   await deleteWishlistForCustomer(customerId);
   await emitWishlistWebhook(WISHLIST_EVENTS.cleared, {
+    shop,
     customerId,
     handles: [],
   });
@@ -133,7 +162,7 @@ export async function handleWishlistCleared(body) {
   });
 }
 
-export async function handleWishlistItemAdded(body) {
+export async function handleWishlistItemAdded(body, { shop } = {}) {
   const customerId = customerIdString(body.customerId);
   const incoming = readHandles(body);
   if (!customerId || customerId === "null") return fail(400, "Missing customerId");
@@ -141,6 +170,7 @@ export async function handleWishlistItemAdded(body) {
 
   const result = await addProductHandlesForCustomer(customerId, incoming);
   await emitWishlistWebhook(WISHLIST_EVENTS.item_added, {
+    shop,
     customerId: result.customerId,
     handles: result.handles,
     added: result.added,
@@ -152,7 +182,7 @@ export async function handleWishlistItemAdded(body) {
   });
 }
 
-export async function handleWishlistItemRemoved(body) {
+export async function handleWishlistItemRemoved(body, { shop } = {}) {
   const customerId = customerIdString(body.customerId);
   const incoming = readHandles(body);
   if (!customerId || customerId === "null") return fail(400, "Missing customerId");
@@ -160,6 +190,7 @@ export async function handleWishlistItemRemoved(body) {
 
   const result = await removeProductHandlesForCustomer(customerId, incoming);
   await emitWishlistWebhook(WISHLIST_EVENTS.item_removed, {
+    shop,
     customerId: result.customerId,
     handles: result.handles,
     removed: result.removed,
@@ -213,7 +244,8 @@ export function wishlistCustomWebhookRoutes(event) {
 
       try {
         const body = await request.json();
-        const result = await handler(body);
+        const shop = await resolveShop(request, body);
+        const result = await handler(body, { shop });
         const { status, ...data } = result;
         return jsonCors(request, data, status, METHODS);
       } catch (error) {

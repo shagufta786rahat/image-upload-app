@@ -48,15 +48,21 @@ function extractDocs(result) {
   return null;
 }
 
-function mapWebhook(doc) {
+function mapWebhook(doc, { includeSecret = false } = {}) {
   if (!doc) return null;
-  return {
+  const webhook = {
     id: documentId(doc),
     topic: doc.topic,
     address: doc.address,
     format: doc.format || "json",
     created_at: toIsoDate(doc.createdAt),
   };
+  if (includeSecret && doc.secret) webhook.secret = doc.secret;
+  return webhook;
+}
+
+function generateWebhookSecret() {
+  return crypto.randomBytes(32).toString("hex");
 }
 
 async function runOnCollections(buildCommand) {
@@ -120,16 +126,15 @@ export async function findWebhookSubscription(topic, address) {
   return mapWebhook(extractDocs(result)?.[0]);
 }
 
-export async function listWebhookSubscriptions(topic) {
+async function listWebhookDocuments(topic) {
   const filter = topic ? { topic } : {};
   const model = webhookModel();
   if (model?.findMany) {
     try {
-      const rows = await model.findMany({
+      return await model.findMany({
         where: filter,
         orderBy: { createdAt: "desc" },
       });
-      return rows.map(mapWebhook).filter(Boolean);
     } catch (error) {
       console.error("Prisma webhook findMany failed, using raw query:", error);
     }
@@ -140,20 +145,25 @@ export async function listWebhookSubscriptions(topic) {
     filter,
     sort: { createdAt: -1 },
   }));
-  return (extractDocs(result) || []).map(mapWebhook).filter(Boolean);
+  return extractDocs(result) || [];
+}
+
+export async function listWebhookSubscriptions(topic) {
+  return (await listWebhookDocuments(topic)).map((doc) => mapWebhook(doc)).filter(Boolean);
 }
 
 export async function createWebhookSubscription({ topic, address, format = "json" }) {
   const existing = await findWebhookSubscription(topic, address);
   if (existing) return { webhook: existing, created: false };
 
+  const secret = generateWebhookSecret();
   const model = webhookModel();
   if (model?.create) {
     try {
       const row = await model.create({
-        data: { topic, address, format },
+        data: { topic, address, format, secret },
       });
-      return { webhook: mapWebhook(row), created: true };
+      return { webhook: mapWebhook(row, { includeSecret: true }), created: true };
     } catch (error) {
       console.error("Prisma webhook create failed, using raw query:", error);
     }
@@ -166,12 +176,16 @@ export async function createWebhookSubscription({ topic, address, format = "json
         topic,
         address,
         format,
+        secret,
         createdAt: { $date: new Date().toISOString() },
       },
     ],
   }));
-  const webhook = await findWebhookSubscription(topic, address);
-  return { webhook, created: true };
+  const created = await findWebhookSubscription(topic, address);
+  return {
+    webhook: created ? { ...created, secret } : { topic, address, format, secret },
+    created: true,
+  };
 }
 
 export async function deleteWebhookSubscription({ id, topic, address }) {
@@ -204,29 +218,23 @@ export async function deleteWebhookSubscription({ id, topic, address }) {
   }));
 }
 
-export function signingSecret() {
-  return (
-    process.env.WISHLIST_WEBHOOK_SECRET ||
-    process.env.SHOPIFY_API_SECRET ||
-    ""
-  );
-}
-
-export function signWebhookBody(rawBody) {
-  const secret = signingSecret();
+export function signWebhookBody(rawBody, secret) {
   if (!secret) return "";
-  return crypto.createHmac("sha256", secret).update(rawBody, "utf8").digest("base64");
+  return crypto
+    .createHmac("sha256", secret)
+    .update(rawBody, "utf8")
+    .digest("base64");
 }
 
-export async function addressesForTopic(topic) {
+export async function subscriptionsForTopic(topic) {
   const wanted = normalizeTopic(topic);
-  const rows = await listWebhookSubscriptions();
-  return [
-    ...new Set(
-      rows
-        .filter((row) => normalizeTopic(row.topic) === wanted)
-        .map((row) => row.address)
-        .filter(Boolean),
-    ),
-  ];
+  const rows = await listWebhookDocuments();
+  return rows
+    .filter((row) => normalizeTopic(row.topic) === wanted && row.address)
+    .map((row) => ({
+      id: documentId(row),
+      topic: normalizeTopic(row.topic) || row.topic,
+      address: row.address,
+      secret: row.secret || "",
+    }));
 }

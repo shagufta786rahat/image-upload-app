@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Wishlist Webhooks</title>
+  <title>Salty HUB — Wishlist Webhooks for Developers</title>
   <style>
     :root {
       --bg: #f4f1ec;
@@ -25,7 +25,7 @@
       background: var(--bg);
       line-height: 1.55;
     }
-    .layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+    .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
     nav {
       position: sticky;
       top: 0;
@@ -35,7 +35,7 @@
       color: #fafaf9;
       padding: 24px 16px 40px;
     }
-    nav h1 { font-size: 15px; margin: 0 0 6px; letter-spacing: 0.04em; text-transform: uppercase; }
+    nav h1 { font-size: 14px; margin: 0 0 6px; letter-spacing: 0.04em; text-transform: uppercase; }
     nav p { margin: 0 0 20px; font-size: 12px; color: #d6d3d1; }
     nav a {
       display: block;
@@ -46,7 +46,7 @@
       border-radius: 8px;
     }
     nav a:hover { background: rgba(255,255,255,.12); }
-    main { max-width: 900px; padding: 40px 32px 80px; }
+    main { max-width: 860px; padding: 40px 32px 80px; }
     .hero, article.step {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -55,11 +55,19 @@
       margin-bottom: 18px;
     }
     .hero { padding: 28px; margin-bottom: 28px; }
-    .hero h2 { margin: 0 0 8px; font-size: 28px; }
+    .hero h2 { margin: 0 0 8px; font-size: 26px; }
     .hero p, article.step p, article.step li { color: #44403c; }
+    article.step h2 { margin: 0 0 10px; font-size: 20px; }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
     th { background: #fafaf9; }
+    .note {
+      background: #fafaf9;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+    }
     .code-wrap {
       margin: 14px 0 4px;
       border-radius: 12px;
@@ -106,77 +114,67 @@
   <div class="layout">
     <nav>
       <h1>Wishlist webhooks</h1>
-      <p>Register topic + address</p>
-      <a href="#overview">How it works</a>
-      <a href="#topics">Topics</a>
-      <a href="#register">Create a webhook</a>
-      <a href="#list">List webhooks</a>
-      <a href="#delete">Delete a webhook</a>
-      <a href="#delivery">What we POST to you</a>
-      <a href="#verify">Verify HMAC</a>
-      <a href="#examples">cURL</a>
+      <p>Developer guide</p>
+      <a href="#start">1. Start here</a>
+      <a href="#topics">2. Topics</a>
+      <a href="#register">3. Register</a>
+      <a href="#secret">4. Save the secret</a>
+      <a href="#receive">5. What you receive</a>
+      <a href="#verify">6. Verify</a>
+      <a href="#payloads">7. Payloads</a>
+      <a href="#list">8. List / delete</a>
+      <a href="#errors">9. Errors</a>
     </nav>
     <main>
-      <section class="hero" id="overview">
-        <h2>Create a wishlist webhook</h2>
-        <p>Same idea as Shopify: the developer sends a <strong>topic</strong> and an <strong>address</strong>. When that wishlist event happens, we POST JSON to that address.</p>
-        <p><strong>Admin API:</strong> <code>https://personalize.salty.co.in/api/wishlist-webhooks</code></p>
-        <ol>
-          <li>Pick a topic, for example <code>wishlist/item-added</code></li>
-          <li>POST your HTTPS endpoint as <code>address</code></li>
-          <li>Return <code>200</code> from that endpoint when we deliver the event</li>
-        </ol>
+      <section class="hero" id="start">
+        <h2>Wishlist webhooks</h2>
+        <p>Use this if you want Salty HUB to notify your app when a customer wishlist changes.</p>
+        <p>You send us a <strong>topic</strong> and your HTTPS <strong>address</strong>. We POST JSON to that address.</p>
+        <p><strong>Base URL:</strong> <code>https://personalize.salty.co.in</code></p>
+        <table>
+          <thead><tr><th>What</th><th>URL</th></tr></thead>
+          <tbody>
+            <tr><td>Create webhook</td><td><code>POST /api/wishlist-webhooks</code></td></tr>
+            <tr><td>List webhooks</td><td><code>GET /api/wishlist-webhooks</code></td></tr>
+            <tr><td>Delete webhook</td><td><code>DELETE /api/wishlist-webhooks</code></td></tr>
+          </tbody>
+        </table>
       </section>
 
       <article class="step" id="topics">
-        <h2>Topics</h2>
+        <h2>2. Topics</h2>
+        <p>Register one webhook per topic. Same address can be used for all five.</p>
         <table>
-          <thead>
-            <tr><th>topic</th><th>When it fires</th></tr>
-          </thead>
+          <thead><tr><th>topic</th><th>When we call you</th></tr></thead>
           <tbody>
-            <tr><td><code>wishlist/created</code></td><td>A customer wishlist is created</td></tr>
-            <tr><td><code>wishlist/updated</code></td><td>The full list is replaced</td></tr>
-            <tr><td><code>wishlist/cleared</code></td><td>The list is deleted</td></tr>
-            <tr><td><code>wishlist/item-added</code></td><td>One or more product handles are added</td></tr>
-            <tr><td><code>wishlist/item-removed</code></td><td>One or more product handles are removed</td></tr>
+            <tr><td><code>wishlist/created</code></td><td>New wishlist is created</td></tr>
+            <tr><td><code>wishlist/updated</code></td><td>Full list is replaced</td></tr>
+            <tr><td><code>wishlist/cleared</code></td><td>Wishlist is deleted</td></tr>
+            <tr><td><code>wishlist/item-added</code></td><td>Product is added</td></tr>
+            <tr><td><code>wishlist/item-removed</code></td><td>Product is removed</td></tr>
           </tbody>
         </table>
       </article>
 
       <article class="step" id="register">
-        <h2>Create a webhook</h2>
-        <p><code>POST /api/wishlist-webhooks</code></p>
-        <p>Pass <code>topic</code> and <code>address</code>. <code>address</code> must be <code>https://</code> (or <code>http://localhost</code> while testing).</p>
+        <h2>3. Register</h2>
+        <p><code>POST https://personalize.salty.co.in/api/wishlist-webhooks</code></p>
+        <p>Send JSON. <code>address</code> must be <code>https://</code>.</p>
         <div class="code-wrap">
           <div class="code-toolbar">
-            <span class="file">request body</span>
+            <span class="file">request</span>
             <button type="button" class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><code class="language-json">{
-  "topic": "wishlist/item-added",
-  "address": "https://developer.example.com/webhooks/wishlist",
-  "format": "json"
-}</code></pre>
-        </div>
-        <p>Shopify-style wrapper also works:</p>
-        <div class="code-wrap">
-          <div class="code-toolbar">
-            <span class="file">request body (webhook object)</span>
-            <button type="button" class="copy-btn" data-copy>Copy</button>
-          </div>
-          <pre><code class="language-json">{
-  "webhook": {
+          <pre><code class="language-bash">curl -X POST https://personalize.salty.co.in/api/wishlist-webhooks \
+  -H "Content-Type: application/json" \
+  -d '{
     "topic": "wishlist/item-added",
-    "address": "https://developer.example.com/webhooks/wishlist",
-    "format": "json"
-  }
-}</code></pre>
+    "address": "https://your-app.com/webhooks/wishlist"
+  }'</code></pre>
         </div>
-        <p>Response <code>201</code> if it was new, <code>200</code> if that topic + address already existed:</p>
         <div class="code-wrap">
           <div class="code-toolbar">
-            <span class="file">response</span>
+            <span class="file">response 201</span>
             <button type="button" class="copy-btn" data-copy>Copy</button>
           </div>
           <pre><code class="language-json">{
@@ -185,82 +183,36 @@
   "webhook": {
     "id": "68ca1b2e3f4a5b6c7d8e9f01",
     "topic": "wishlist/item-added",
-    "address": "https://developer.example.com/webhooks/wishlist",
+    "address": "https://your-app.com/webhooks/wishlist",
     "format": "json",
+    "secret": "KEEP_THIS_SECRET",
     "created_at": "2026-09-17T07:30:00.000Z"
   }
 }</code></pre>
         </div>
-        <p>Register once per topic. If you need all events, create five webhooks (one address can be reused).</p>
       </article>
 
-      <article class="step" id="list">
-        <h2>List webhooks</h2>
-        <p><code>GET /api/wishlist-webhooks</code></p>
-        <p>Optional filter: <code>GET /api/wishlist-webhooks?topic=wishlist/item-added</code></p>
-        <div class="code-wrap">
-          <div class="code-toolbar">
-            <span class="file">response</span>
-            <button type="button" class="copy-btn" data-copy>Copy</button>
-          </div>
-          <pre><code class="language-json">{
-  "ok": true,
-  "topics": [
-    "wishlist/created",
-    "wishlist/updated",
-    "wishlist/cleared",
-    "wishlist/item-added",
-    "wishlist/item-removed"
-  ],
-  "webhooks": [
-    {
-      "id": "68ca1b2e3f4a5b6c7d8e9f01",
-      "topic": "wishlist/item-added",
-      "address": "https://developer.example.com/webhooks/wishlist",
-      "format": "json",
-      "created_at": "2026-09-17T07:30:00.000Z"
-    }
-  ]
-}</code></pre>
-        </div>
+      <article class="step" id="secret">
+        <h2>4. Save the secret</h2>
+        <p class="note"><code>webhook.secret</code> is shown <strong>only when you create</strong> the webhook. Put it in your app env. Do not commit it. We never send it again on list.</p>
+        <p>If you lose it, delete the webhook and register again.</p>
       </article>
 
-      <article class="step" id="delete">
-        <h2>Delete a webhook</h2>
-        <p><code>DELETE /api/wishlist-webhooks</code></p>
-        <div class="code-wrap">
-          <div class="code-toolbar">
-            <span class="file">by id</span>
-            <button type="button" class="copy-btn" data-copy>Copy</button>
-          </div>
-          <pre><code class="language-bash">DELETE /api/wishlist-webhooks?id=68ca1b2e3f4a5b6c7d8e9f01</code></pre>
-        </div>
-        <div class="code-wrap">
-          <div class="code-toolbar">
-            <span class="file">by topic + address</span>
-            <button type="button" class="copy-btn" data-copy>Copy</button>
-          </div>
-          <pre><code class="language-json">{
-  "topic": "wishlist/item-added",
-  "address": "https://developer.example.com/webhooks/wishlist"
-}</code></pre>
-        </div>
-      </article>
-
-      <article class="step" id="delivery">
-        <h2>What we POST to your address</h2>
-        <p>After a customer changes a wishlist, every webhook registered for that topic receives:</p>
-        <div class="code-wrap">
-          <div class="code-toolbar">
-            <span class="file">headers</span>
-            <button type="button" class="copy-btn" data-copy>Copy</button>
-          </div>
-          <pre><code class="language-text">Content-Type: application/json
-X-Wishlist-Topic: wishlist/item-added
-X-Wishlist-Webhook-Id: 9b3c1e2a-4d55-4f10-9c2a-1f0e8d7c6b5a
-X-Wishlist-Triggered-At: 2026-09-17T07:31:12.000Z
-X-Wishlist-Hmac-Sha256: Base64HMAC</code></pre>
-        </div>
+      <article class="step" id="receive">
+        <h2>5. What you receive</h2>
+        <p>When the topic happens, we POST to your address.</p>
+        <p>Headers:</p>
+        <table>
+          <thead><tr><th>Header</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>Content-Type</code></td><td><code>application/json</code></td></tr>
+            <tr><td><code>X-Wishlist-Topic</code></td><td>Topic name, e.g. <code>wishlist/item-added</code></td></tr>
+            <tr><td><code>X-Wishlist-Webhook-Id</code></td><td>Your webhook id</td></tr>
+            <tr><td><code>X-Wishlist-Triggered-At</code></td><td>ISO time</td></tr>
+            <tr><td><code>X-Wishlist-Hmac-Sha256</code></td><td>Base64 HMAC of the raw body</td></tr>
+          </tbody>
+        </table>
+        <p>Body includes shop, customer, and full product objects (not only handles):</p>
         <div class="code-wrap">
           <div class="code-toolbar">
             <span class="file">body</span>
@@ -271,65 +223,207 @@ X-Wishlist-Hmac-Sha256: Base64HMAC</code></pre>
   "event": "wishlist/item-added",
   "created_at": "2026-09-17T07:31:12.000Z",
   "data": {
+    "shop": {
+      "name": "Salty",
+      "domain": "salty.co.in",
+      "url": "https://salty.co.in",
+      "myshopifyDomain": "salty-store.myshopify.com"
+    },
+    "customer": {
+      "id": "1234567890",
+      "gid": "gid://shopify/Customer/1234567890",
+      "firstName": "Riya",
+      "lastName": "Shah",
+      "name": "Riya Shah",
+      "email": "riya@example.com",
+      "phone": "+919999999999"
+    },
     "customerId": "1234567890",
     "handles": ["serum-handle", "face-wash"],
-    "added": ["face-wash"]
+    "products": [
+      {
+        "id": "8877665544",
+        "gid": "gid://shopify/Product/8877665544",
+        "title": "Vitamin C Serum",
+        "handle": "serum-handle",
+        "vendor": "Salty",
+        "productType": "Skincare",
+        "status": "ACTIVE",
+        "tags": ["serum", "face"],
+        "url": "https://salty.co.in/products/serum-handle",
+        "image": {
+          "url": "https://cdn.shopify.com/s/files/1/serum.jpg",
+          "alt": "Vitamin C Serum"
+        },
+        "price": "899.00",
+        "currency": "INR"
+      }
+    ],
+    "addedHandles": ["face-wash"],
+    "added": [
+      {
+        "id": "8877665555",
+        "gid": "gid://shopify/Product/8877665555",
+        "title": "Face Wash",
+        "handle": "face-wash",
+        "vendor": "Salty",
+        "productType": "Skincare",
+        "status": "ACTIVE",
+        "tags": ["cleanser"],
+        "url": "https://salty.co.in/products/face-wash",
+        "image": {
+          "url": "https://cdn.shopify.com/s/files/1/face-wash.jpg",
+          "alt": "Face Wash"
+        },
+        "price": "449.00",
+        "currency": "INR"
+      }
+    ]
   }
 }</code></pre>
         </div>
-        <p>Your endpoint should respond with <code>2xx</code>. Other statuses are logged and not retried yet.</p>
+        <p>Reply with HTTP <code>200</code> quickly. Use <code>data.products</code> and <code>data.customer</code> — you do not need to look up the handle yourself.</p>
       </article>
 
       <article class="step" id="verify">
-        <h2>Verify HMAC</h2>
-        <p>Use the app secret (<code>WISHLIST_WEBHOOK_SECRET</code> or <code>SHOPIFY_API_SECRET</code>). Hash the <strong>raw body string</strong>, then compare to <code>X-Wishlist-Hmac-Sha256</code>.</p>
+        <h2>6. Verify (required)</h2>
+        <p>This proves the POST came from us, not a random caller.</p>
+        <ol>
+          <li>Read the request body as a <strong>raw string</strong> (do not JSON.parse first).</li>
+          <li>Read header <code>X-Wishlist-Hmac-Sha256</code>.</li>
+          <li>HMAC-SHA256 the raw body with your <code>secret</code>.</li>
+          <li>Encode that HMAC as <strong>Base64</strong>.</li>
+          <li>If it matches the header, process the event. If not, return <code>401</code>.</li>
+        </ol>
         <div class="code-wrap">
           <div class="code-toolbar">
-            <span class="file">Node.js</span>
+            <span class="file">Node / Express</span>
             <button type="button" class="copy-btn" data-copy>Copy</button>
           </div>
           <pre><code class="language-js">import crypto from "node:crypto";
+import express from "express";
 
-function verifyWishlistWebhook(rawBody, hmacHeader, secret) {
+const app = express();
+const SECRET = process.env.WISHLIST_WEBHOOK_SECRET;
+
+function isValid(rawBody, hmacHeader) {
   const digest = crypto
-    .createHmac("sha256", secret)
+    .createHmac("sha256", SECRET)
     .update(rawBody, "utf8")
     .digest("base64");
   const a = Buffer.from(digest);
   const b = Buffer.from(String(hmacHeader || ""));
   return a.length === b.length &amp;&amp; crypto.timingSafeEqual(a, b);
-}</code></pre>
+}
+
+app.post(
+  "/webhooks/wishlist",
+  express.raw({ type: "application/json" }),
+  (req, res) =&gt; {
+    const rawBody = req.body.toString("utf8");
+    if (!isValid(rawBody, req.get("X-Wishlist-Hmac-Sha256"))) {
+      return res.status(401).send("Invalid HMAC");
+    }
+
+    const payload = JSON.parse(rawBody);
+
+    if (payload.topic === "wishlist/item-added") {
+      // payload.data.customer.email
+      // payload.data.added[0].title
+      // payload.data.added[0].price
+      // payload.data.products
+    }
+
+    res.status(200).send("ok");
+  },
+);
+
+app.listen(3000);</code></pre>
         </div>
+        <p class="note">Use <code>express.raw</code> on this route. If Express parses JSON first, HMAC will fail.</p>
       </article>
 
-      <article class="step" id="examples">
-        <h2>cURL</h2>
+      <article class="step" id="payloads">
+        <h2>7. Payload per topic</h2>
+        <p>Every topic has <code>data.shop</code>, <code>data.customer</code>, and <code>data.products</code>. <code>handles</code> is also sent for convenience.</p>
+        <p>Each product object has: <code>id</code>, <code>gid</code>, <code>title</code>, <code>handle</code>, <code>vendor</code>, <code>productType</code>, <code>status</code>, <code>tags</code>, <code>url</code>, <code>image</code>, <code>price</code>, <code>currency</code>.</p>
+        <p>Each customer object has: <code>id</code>, <code>gid</code>, <code>firstName</code>, <code>lastName</code>, <code>name</code>, <code>email</code>, <code>phone</code>.</p>
+        <p><code>wishlist/created</code> and <code>wishlist/updated</code> — full current list in <code>products</code>.</p>
         <div class="code-wrap">
           <div class="code-toolbar">
-            <span class="file">register</span>
+            <span class="file">data keys</span>
             <button type="button" class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><code class="language-bash">curl -X POST https://personalize.salty.co.in/api/wishlist-webhooks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "topic": "wishlist/item-added",
-    "address": "https://developer.example.com/webhooks/wishlist"
-  }'</code></pre>
+          <pre><code class="language-json">{
+  "shop": { "name": "Salty", "domain": "salty.co.in", "url": "https://salty.co.in", "myshopifyDomain": "store.myshopify.com" },
+  "customer": { "id": "1234567890", "name": "Riya Shah", "email": "riya@example.com", "phone": "+919999999999" },
+  "customerId": "1234567890",
+  "handles": ["serum-handle"],
+  "products": [{ "title": "Vitamin C Serum", "handle": "serum-handle", "price": "899.00", "currency": "INR", "url": "https://salty.co.in/products/serum-handle", "image": { "url": "https://cdn.shopify.com/..." } }]
+}</code></pre>
         </div>
+        <p><code>wishlist/cleared</code> — customer stays, products is empty.</p>
+        <div class="code-wrap">
+          <div class="code-toolbar">
+            <span class="file">data</span>
+            <button type="button" class="copy-btn" data-copy>Copy</button>
+          </div>
+          <pre><code class="language-json">{
+  "customer": { "id": "1234567890", "name": "Riya Shah", "email": "riya@example.com" },
+  "handles": [],
+  "products": []
+}</code></pre>
+        </div>
+        <p><code>wishlist/item-added</code> — <code>products</code> is the full list. <code>added</code> is only the new products (full objects). <code>addedHandles</code> is the handle list.</p>
+        <p><code>wishlist/item-removed</code> — <code>products</code> is what remains. <code>removed</code> is the products that were taken off (full objects if still in Shopify).</p>
+      </article>
+
+      <article class="step" id="list">
+        <h2>8. List and delete</h2>
+        <p>List (secret is not returned):</p>
         <div class="code-wrap">
           <div class="code-toolbar">
             <span class="file">list</span>
             <button type="button" class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><code class="language-bash">curl https://personalize.salty.co.in/api/wishlist-webhooks</code></pre>
+          <pre><code class="language-bash">curl https://personalize.salty.co.in/api/wishlist-webhooks
+curl https://personalize.salty.co.in/api/wishlist-webhooks?topic=wishlist/item-added</code></pre>
         </div>
+        <p>Delete by id, or by topic + address:</p>
         <div class="code-wrap">
           <div class="code-toolbar">
             <span class="file">delete</span>
             <button type="button" class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><code class="language-bash">curl -X DELETE "https://personalize.salty.co.in/api/wishlist-webhooks?id=WEBHOOK_ID"</code></pre>
+          <pre><code class="language-bash">curl -X DELETE "https://personalize.salty.co.in/api/wishlist-webhooks?id=WEBHOOK_ID"
+
+curl -X DELETE https://personalize.salty.co.in/api/wishlist-webhooks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "wishlist/item-added",
+    "address": "https://your-app.com/webhooks/wishlist"
+  }'</code></pre>
         </div>
+      </article>
+
+      <article class="step" id="errors">
+        <h2>9. Errors</h2>
+        <table>
+          <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>400</td><td>Bad topic, or address is not https</td></tr>
+            <tr><td>201</td><td>Webhook created. Save <code>secret</code></td></tr>
+            <tr><td>200</td><td>Already registered, or list/delete ok. No new secret</td></tr>
+            <tr><td>401 on your side</td><td>HMAC did not match. Check raw body + secret</td></tr>
+          </tbody>
+        </table>
+        <p>Checklist:</p>
+        <ol>
+          <li>HTTPS endpoint is live and returns 200</li>
+          <li>You registered the topic you care about</li>
+          <li>You stored <code>webhook.secret</code></li>
+          <li>You verify HMAC on the raw body</li>
+        </ol>
       </article>
     </main>
   </div>

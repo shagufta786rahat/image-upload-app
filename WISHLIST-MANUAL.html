@@ -974,7 +974,7 @@ Header wishlist icon with live count badge.
 
       <article class="step" id="webhooks">
         <h2>Custom webhooks</h2>
-        <p>Developers register with a <code>topic</code> and HTTPS <code>address</code>. Full doc: <a href="WISHLIST-WEBHOOKS.html">WISHLIST-WEBHOOKS.html</a>.</p>
+        <p>Give developers this file: <a href="WISHLIST-WEBHOOKS.html">WISHLIST-WEBHOOKS.html</a>.</p>
         <table>
           <thead><tr><th>Action</th><th>URL</th></tr></thead>
           <tbody>
@@ -983,7 +983,7 @@ Header wishlist icon with live count badge.
             <tr><td>Delete</td><td>DELETE /api/wishlist-webhooks?id=ID</td></tr>
           </tbody>
         </table>
-        <p>Body: <code>{"topic":"wishlist/item-added","address":"https://your-app.com/hooks"}</code></p>
+        <p>Body: <code>{"topic":"wishlist/item-added","address":"https://your-app.com/hooks"}</code>. Create response includes <code>secret</code> — third-party apps verify <code>X-Wishlist-Hmac-Sha256</code> with that secret.</p>
       </article>
 
       <article class="step" id="test">
