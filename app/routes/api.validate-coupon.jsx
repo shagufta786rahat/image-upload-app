@@ -294,6 +294,7 @@ function normalizeCart(items, currency) {
     .map((item) => ({
       productId: resourceGid("Product", item?.product_id ?? item?.productId),
       variantId: resourceGid("ProductVariant", item?.variant_id ?? item?.variantId),
+      productType: asText(item?.product_type || item?.productType || item?.product?.type),
       quantity: Math.max(0, Number(item?.quantity) || 0),
       lineAmount: lineAmount(item, code),
       title: asText(item?.title),
@@ -475,7 +476,203 @@ function buysFailure(buys, lines, currency) {
 
 function discountUsesCollections(discount) {
   const groups = [discount?.customerGets?.items, discount?.customerBuys?.items];
-  return groups.some((items) => itemTargets(items).collectionIds.length > 0);
+  return (
+    groups.some((items) => itemTargets(items).collectionIds.length > 0) ||
+    rulesetCollectionIds(discount?.rulesets).length > 0
+  );
+}
+
+function parseRuleset(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function rulesetCollectionIds(rulesets = []) {
+  const ids = [];
+  for (const ruleset of rulesets || []) {
+    for (const value of Object.values(ruleset || {})) {
+      if (!Array.isArray(value)) continue;
+      for (const entry of value) {
+        if (typeof entry?.id === "string" && entry.id.includes("/Collection/")) {
+          ids.push(entry.id);
+        }
+      }
+    }
+  }
+  return ids;
+}
+
+function comparisonOperator(rule) {
+  const operator = rule?.con || rule?.mc;
+  return typeof operator === "string" ? operator : "gte";
+}
+
+function passesComparison(actual, required, operator, currency) {
+  const left = currency ? moneyValue(actual, currency) : Number(actual);
+  const right = currency ? moneyValue(required, currency) : Number(required);
+  if (operator === "gt") return left > right;
+  if (operator === "lt") return left < right;
+  if (operator === "lte" || operator === "le") return left <= right;
+  if (operator === "eq" || operator === "e") return left === right;
+  return left >= right;
+}
+
+function idSet(value) {
+  const list = Array.isArray(value) ? value : value?.arr || [];
+  const ids = new Set();
+  for (const entry of list) {
+    const raw = typeof entry === "string" || typeof entry === "number" ? entry : entry?.id;
+    if (raw == null || raw === "") continue;
+    const text = String(raw);
+    ids.add(text);
+    if (text.startsWith("gid://")) ids.add(text);
+    const productId = resourceGid("Product", text);
+    const variantId = resourceGid("ProductVariant", text);
+    if (productId) ids.add(productId);
+    if (variantId) ids.add(variantId);
+  }
+  return ids;
+}
+
+function linesMatchingSelector(config, selector, cart, collectionMap) {
+  const spec = config?.[selector];
+  if (!selector || selector === "none") return cart.lines;
+
+  if (selector.includes("_col")) {
+    const ids = idSet(spec);
+    if (!ids.size) return cart.lines;
+    return cart.lines.filter((line) =>
+      (collectionMap.get(line.productId) || []).some((id) => ids.has(id)),
+    );
+  }
+
+  if (selector.includes("_var")) {
+    const ids = idSet(spec);
+    if (!ids.size) return cart.lines;
+    return cart.lines.filter((line) => line.variantId && ids.has(line.variantId));
+  }
+
+  if (selector.includes("_pv")) {
+    const ids = idSet(spec);
+    if (!ids.size) return cart.lines;
+    return cart.lines.filter((line) => line.productId && ids.has(line.productId));
+  }
+
+  if (selector.includes("_pty")) {
+    const list = spec?.arr || (spec?.val ? [spec.val] : []);
+    const types = list
+      .map((entry) => asText(typeof entry === "string" ? entry : entry?.title || entry?.value))
+      .filter(Boolean)
+      .map((type) => type.toLowerCase());
+    if (!types.length) return cart.lines;
+    return cart.lines.filter((line) =>
+      types.includes(String(line.productType || "").toLowerCase()),
+    );
+  }
+
+  return cart.lines;
+}
+
+function priceRuleForSelector(config, selector) {
+  if (!selector?.startsWith("ct_i")) return null;
+  const slot = selector.match(/_(\d)$/);
+  if (slot) return config[`ct_i_pr_${slot[1]}`] || null;
+  return config.ct_i_pr || null;
+}
+
+function linesForRulesetRule(config, rule, cart, collectionMap) {
+  const selector = rule?.is;
+  let lines = selector ? linesMatchingSelector(config, selector, cart, collectionMap) : cart.lines;
+  const priceRule = priceRuleForSelector(config, selector);
+  const minimumPrice = Number(priceRule?.amt);
+  if (Number.isFinite(minimumPrice) && minimumPrice > 0) {
+    lines = lines.filter((line) => {
+      const unitPrice = line.quantity > 0 ? line.lineAmount / line.quantity : 0;
+      return passesComparison(
+        unitPrice,
+        minimumPrice,
+        comparisonOperator(priceRule),
+        cart.currency,
+      );
+    });
+  }
+  return lines;
+}
+
+function quantityMessage(required, have) {
+  const more = Math.max(1, Math.ceil(required - have));
+  return `Add ${more} more item${more === 1 ? "" : "s"} to use this coupon`;
+}
+
+function selectedRulesetKeys(config) {
+  const andKeys = [];
+  const orKeys = [];
+  for (const key of [config.ct_q, config.bi]) {
+    if (key && key !== "none") andKeys.push(key);
+  }
+  for (const key of config.ct_and || []) {
+    if (key && key !== "none") andKeys.push(key);
+  }
+  for (const key of config.ct_or || []) {
+    if (key && key !== "none") orKeys.push(key);
+  }
+  return { andKeys, orKeys };
+}
+
+function evaluateRulesetKey(config, key, cart, collectionMap) {
+  const rule = config[key];
+  if (!rule || typeof rule !== "object" || Array.isArray(rule)) return null;
+
+  const operator = comparisonOperator(rule);
+  if (key === "bi_ct" || key.startsWith("ct_amt")) {
+    const required = Number(rule.amt);
+    if (!Number.isFinite(required) || required <= 0) return null;
+    if (passesComparison(cart.subtotal, required, operator, cart.currency)) return null;
+    return `Add ${formatMoney(required - cart.subtotal, cart.currency)} more to your cart to use this coupon`;
+  }
+
+  if (key.startsWith("ct_qty") || key.startsWith("ct_i") || key.startsWith("bi_li")) {
+    const required = Number(rule.amt);
+    if (!Number.isFinite(required) || required <= 0) return null;
+    const lines = linesForRulesetRule(config, rule, cart, collectionMap);
+    if (rule.t === "amt") {
+      const spent = lines.reduce((sum, line) => sum + line.lineAmount, 0);
+      if (passesComparison(spent, required, operator, cart.currency)) return null;
+      return `Add ${formatMoney(required - spent, cart.currency)} more in eligible items to use this coupon`;
+    }
+    const have = rule.t === "cart" || rule.b === "cart" ? cart.quantity : quantityOf(lines);
+    if (passesComparison(have, required, operator)) return null;
+    return quantityMessage(required, have);
+  }
+
+  return null;
+}
+
+function rulesetFailure(rulesets, cart, collectionMap) {
+  for (const ruleset of rulesets || []) {
+    const { andKeys, orKeys } = selectedRulesetKeys(ruleset);
+    for (const key of andKeys) {
+      const failure = evaluateRulesetKey(ruleset, key, cart, collectionMap);
+      if (failure) return failure;
+    }
+    if (!orKeys.length) continue;
+    const failures = orKeys.map((key) => evaluateRulesetKey(ruleset, key, cart, collectionMap));
+    if (failures.every(Boolean)) return failures.find(Boolean);
+  }
+  return null;
+}
+
+function offerExplanation(offer, discount) {
+  const summary = discountSummary(discount);
+  if (offer.description) return offer.description;
+  if (summary && !sameCode(summary, offer.code)) return summary;
+  return "";
 }
 
 function evaluateDiscount(offer, discount, cart, customerGid, memberSegmentIds, membershipError, collectionMap) {
@@ -497,8 +694,14 @@ function evaluateDiscount(offer, discount, cart, customerGid, memberSegmentIds, 
     );
   }
 
+  const explanation = offerExplanation(offer, discount);
+  const ruleMessage = rulesetFailure(discount.rulesets, cart, collectionMap);
+  if (ruleMessage) {
+    return offerResult(offer, discount, false, describe(ruleMessage, explanation));
+  }
+
   if (discount.__typename === "DiscountCodeApp") {
-    return offerResult(offer, discount, true, summary || "Applies to your cart");
+    return offerResult(offer, discount, true, explanation || "Applies to your cart");
   }
 
   if (discount.__typename === "DiscountCodeBxgy") {
@@ -608,7 +811,11 @@ async function fetchDiscountsByCodes(shop, accessToken, codes) {
     const variables = {};
     const selections = chunk.map((code, index) => {
       variables[`code${index}`] = code;
-      return `d${index}: codeDiscountNodeByCode(code: $code${index}) { codeDiscount { ${CODE_DISCOUNT_FIELDS} } }`;
+      return `d${index}: codeDiscountNodeByCode(code: $code${index}) {
+        conditional: metafield(namespace: "EveryPossibleDiscount", key: "metaconfigconditional") { value }
+        bxgy: metafield(namespace: "EveryPossibleDiscount", key: "metaconfigbxgy") { value }
+        codeDiscount { ${CODE_DISCOUNT_FIELDS} }
+      }`;
     });
     const variableDefs = chunk.map((_, index) => `$code${index}: String!`).join(", ");
     const query = `#graphql
@@ -627,7 +834,14 @@ async function fetchDiscountsByCodes(shop, accessToken, codes) {
     accessToken = token;
 
     chunk.forEach((code, index) => {
-      discounts.set(code.toLowerCase(), data?.data?.[`d${index}`]?.codeDiscount || null);
+      const node = data?.data?.[`d${index}`];
+      const discount = node?.codeDiscount || null;
+      if (discount) {
+        discount.rulesets = [parseRuleset(node?.conditional?.value), parseRuleset(node?.bxgy?.value)].filter(
+          Boolean,
+        );
+      }
+      discounts.set(code.toLowerCase(), discount);
     });
   }
 
