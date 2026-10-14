@@ -280,7 +280,13 @@ function formatMoney(amount, currency) {
 }
 
 function lineAmount(item, currency) {
-  const cents = Number(item?.line_price ?? item?.final_line_price ?? item?.linePrice);
+  const cents = Number(
+    item?.original_line_price ??
+      item?.originalLinePrice ??
+      item?.line_price ??
+      item?.final_line_price ??
+      item?.linePrice,
+  );
   if (Number.isFinite(cents)) {
     return moneyValue(ZERO_DECIMAL.has(currency) ? cents : cents / 100, currency);
   }
@@ -476,10 +482,7 @@ function buysFailure(buys, lines, currency) {
 
 function discountUsesCollections(discount) {
   const groups = [discount?.customerGets?.items, discount?.customerBuys?.items];
-  return (
-    groups.some((items) => itemTargets(items).collectionIds.length > 0) ||
-    rulesetCollectionIds(discount?.rulesets).length > 0
-  );
+  return groups.some((items) => itemTargets(items).collectionIds.length > 0);
 }
 
 function parseRuleset(value) {
@@ -545,10 +548,12 @@ function linesMatchingSelector(config, selector, cart, collectionMap) {
   if (!selector || selector === "none") return cart.lines;
 
   if (selector.includes("_col")) {
-    const ids = idSet(spec);
-    if (!ids.size) return cart.lines;
+    const usableSet = new Set(
+      [...idSet(spec)].filter((id) => id.includes("/Collection/")),
+    );
+    if (!usableSet.size) return cart.lines;
     return cart.lines.filter((line) =>
-      (collectionMap.get(line.productId) || []).some((id) => ids.has(id)),
+      (collectionMap.get(line.productId) || []).some((id) => usableSet.has(id)),
     );
   }
 
@@ -885,6 +890,57 @@ async function fetchProductCollections(shop, accessToken, productIds) {
   return { collectionMap, accessToken };
 }
 
+async function fetchRulesetCollectionMembership(shop, accessToken, productIds, collectionIds) {
+  const collectionMap = new Map();
+  const products = [...new Set(productIds.filter(Boolean))];
+  const collections = [
+    ...new Set(collectionIds.filter((id) => /^gid:\/\/shopify\/Collection\/\d+$/.test(id))),
+  ];
+  if (!products.length || !collections.length) {
+    return { collectionMap, accessToken };
+  }
+
+  const aliases = collections
+    .map((id, index) => `c${index}: inCollection(id: "${id}")`)
+    .join("\n");
+
+  for (let start = 0; start < products.length; start += 50) {
+    const slice = products.slice(start, start + 50);
+    const { data, accessToken: token } = await shopifyGraphql(
+      shop,
+      accessToken,
+      `#graphql
+        query RulesetCollectionMembership($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on Product {
+              id
+              ${aliases}
+            }
+          }
+        }
+      `,
+      { ids: slice },
+    );
+    accessToken = token;
+
+    for (const node of data?.data?.nodes || []) {
+      if (!node?.id) continue;
+      const memberOf = collections.filter((_, index) => node[`c${index}`]);
+      collectionMap.set(node.id, memberOf);
+    }
+  }
+
+  return { collectionMap, accessToken };
+}
+
+function mergeCollectionMaps(target, extra) {
+  for (const [productId, ids] of extra) {
+    const current = new Set(target.get(productId) || []);
+    for (const id of ids) current.add(id);
+    target.set(productId, [...current]);
+  }
+}
+
 async function fetchSegmentMembership(shop, accessToken, customerGid, segmentIds) {
   const memberSegmentIds = new Set();
   const ids = [...new Set(segmentIds.filter(Boolean))];
@@ -977,16 +1033,28 @@ async function handleValidateCoupon(request) {
 
   const cart = normalizeCart(items, currency);
   const customerGid = resourceGid("Customer", customerId);
-  const needsCollections = [...discountLookup.discounts.values()].some(discountUsesCollections);
+  const rulesetCollectionIdsForCart = [
+    ...discountLookup.discounts.values(),
+  ].flatMap((discount) => rulesetCollectionIds(discount?.rulesets));
+  const needsShopifyCollections = [...discountLookup.discounts.values()].some(
+    discountUsesCollections,
+  );
 
   let collectionMap = new Map();
-  if (needsCollections) {
-    const collections = await fetchProductCollections(
+  const productIds = cart.lines.map((line) => line.productId);
+  if (rulesetCollectionIdsForCart.length) {
+    const membership = await fetchRulesetCollectionMembership(
       shop,
       accessToken,
-      cart.lines.map((line) => line.productId),
+      productIds,
+      rulesetCollectionIdsForCart,
     );
-    collectionMap = collections.collectionMap;
+    collectionMap = membership.collectionMap;
+    accessToken = membership.accessToken;
+  }
+  if (needsShopifyCollections) {
+    const collections = await fetchProductCollections(shop, accessToken, productIds);
+    mergeCollectionMaps(collectionMap, collections.collectionMap);
     accessToken = collections.accessToken;
   }
 
