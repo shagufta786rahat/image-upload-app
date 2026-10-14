@@ -480,9 +480,39 @@ function buysFailure(buys, lines, currency) {
   return null;
 }
 
-function discountUsesCollections(discount) {
+function nativeCollectionIds(discount) {
   const groups = [discount?.customerGets?.items, discount?.customerBuys?.items];
-  return groups.some((items) => itemTargets(items).collectionIds.length > 0);
+  return groups.flatMap((items) => itemTargets(items).collectionIds);
+}
+
+function nativeFailure(discount, cart, collectionMap) {
+  if (discount.customerBuys) {
+    const buyTargets = itemTargets(discount.customerBuys.items);
+    const buyLines = matchingLines(cart, buyTargets, collectionMap);
+    const buyMessage = buysFailure(discount.customerBuys, buyLines, cart.currency);
+    if (buyMessage) return buyMessage;
+
+    if (discount.customerGets) {
+      const getTargets = itemTargets(discount.customerGets.items);
+      if (!getTargets.all && !matchingLines(cart, getTargets, collectionMap).length) {
+        return missingItemsMessage(getTargets);
+      }
+    }
+    return null;
+  }
+
+  if (discount.customerGets) {
+    const targets = itemTargets(discount.customerGets.items);
+    const eligible = matchingLines(cart, targets, collectionMap);
+    if (!targets.all && !eligible.length) return missingItemsMessage(targets);
+    return minimumFailure(
+      discount.minimumRequirement,
+      cart,
+      targets.all ? cart.lines : eligible,
+    );
+  }
+
+  return minimumFailure(discount.minimumRequirement, cart, cart.lines);
 }
 
 function parseRuleset(value) {
@@ -705,45 +735,12 @@ function evaluateDiscount(offer, discount, cart, customerGid, memberSegmentIds, 
     return offerResult(offer, discount, false, describe(ruleMessage, explanation));
   }
 
-  if (discount.__typename === "DiscountCodeApp") {
-    return offerResult(offer, discount, true, explanation || "Applies to your cart");
+  const shopifyMessage = nativeFailure(discount, cart, collectionMap);
+  if (shopifyMessage) {
+    return offerResult(offer, discount, false, describe(shopifyMessage, summary || explanation));
   }
 
-  if (discount.__typename === "DiscountCodeBxgy") {
-    const buyTargets = itemTargets(discount.customerBuys?.items);
-    const buyLines = matchingLines(cart, buyTargets, collectionMap);
-    const buyMessage = buysFailure(discount.customerBuys, buyLines, cart.currency);
-    if (buyMessage) {
-      return offerResult(offer, discount, false, describe(buyMessage, summary));
-    }
-
-    const getTargets = itemTargets(discount.customerGets?.items);
-    if (!getTargets.all && !matchingLines(cart, getTargets, collectionMap).length) {
-      return offerResult(
-        offer,
-        discount,
-        false,
-        describe(missingItemsMessage(getTargets), summary),
-      );
-    }
-
-    return offerResult(offer, discount, true, summary || "Applies to your cart");
-  }
-
-  const targets = itemTargets(discount.customerGets?.items);
-  const eligible = matchingLines(cart, targets, collectionMap);
-  if (!targets.all && !eligible.length) {
-    return offerResult(offer, discount, false, describe(missingItemsMessage(targets), summary));
-  }
-
-  const minimum = minimumFailure(
-    discount.minimumRequirement,
-    cart,
-    targets.all ? cart.lines : eligible,
-  );
-  if (minimum) return offerResult(offer, discount, false, describe(minimum, summary));
-
-  return offerResult(offer, discount, true, summary || "Applies to your cart");
+  return offerResult(offer, discount, true, explanation || summary || "Applies to your cart");
 }
 
 async function readInput(request) {
@@ -853,44 +850,7 @@ async function fetchDiscountsByCodes(shop, accessToken, codes) {
   return { discounts, accessToken };
 }
 
-async function fetchProductCollections(shop, accessToken, productIds) {
-  const collectionMap = new Map();
-  const ids = [...new Set(productIds.filter(Boolean))];
-
-  for (let start = 0; start < ids.length; start += 50) {
-    const slice = ids.slice(start, start + 50);
-    const { data, accessToken: token } = await shopifyGraphql(
-      shop,
-      accessToken,
-      `#graphql
-        query CartProductCollections($ids: [ID!]!) {
-          nodes(ids: $ids) {
-            ... on Product {
-              id
-              collections(first: 100) {
-                nodes { id }
-              }
-            }
-          }
-        }
-      `,
-      { ids: slice },
-    );
-    accessToken = token;
-
-    for (const node of data?.data?.nodes || []) {
-      if (!node?.id) continue;
-      collectionMap.set(
-        node.id,
-        (node.collections?.nodes || []).map((collection) => collection.id),
-      );
-    }
-  }
-
-  return { collectionMap, accessToken };
-}
-
-async function fetchRulesetCollectionMembership(shop, accessToken, productIds, collectionIds) {
+async function fetchCollectionMembership(shop, accessToken, productIds, collectionIds) {
   const collectionMap = new Map();
   const products = [...new Set(productIds.filter(Boolean))];
   const collections = [
@@ -931,14 +891,6 @@ async function fetchRulesetCollectionMembership(shop, accessToken, productIds, c
   }
 
   return { collectionMap, accessToken };
-}
-
-function mergeCollectionMaps(target, extra) {
-  for (const [productId, ids] of extra) {
-    const current = new Set(target.get(productId) || []);
-    for (const id of ids) current.add(id);
-    target.set(productId, [...current]);
-  }
 }
 
 async function fetchSegmentMembership(shop, accessToken, customerGid, segmentIds) {
@@ -1033,29 +985,22 @@ async function handleValidateCoupon(request) {
 
   const cart = normalizeCart(items, currency);
   const customerGid = resourceGid("Customer", customerId);
-  const rulesetCollectionIdsForCart = [
-    ...discountLookup.discounts.values(),
-  ].flatMap((discount) => rulesetCollectionIds(discount?.rulesets));
-  const needsShopifyCollections = [...discountLookup.discounts.values()].some(
-    discountUsesCollections,
-  );
+  const collectionIdsForCart = [...discountLookup.discounts.values()].flatMap((discount) => [
+    ...rulesetCollectionIds(discount?.rulesets),
+    ...nativeCollectionIds(discount),
+  ]);
 
   let collectionMap = new Map();
   const productIds = cart.lines.map((line) => line.productId);
-  if (rulesetCollectionIdsForCart.length) {
-    const membership = await fetchRulesetCollectionMembership(
+  if (collectionIdsForCart.length) {
+    const membership = await fetchCollectionMembership(
       shop,
       accessToken,
       productIds,
-      rulesetCollectionIdsForCart,
+      collectionIdsForCart,
     );
     collectionMap = membership.collectionMap;
     accessToken = membership.accessToken;
-  }
-  if (needsShopifyCollections) {
-    const collections = await fetchProductCollections(shop, accessToken, productIds);
-    mergeCollectionMaps(collectionMap, collections.collectionMap);
-    accessToken = collections.accessToken;
   }
 
   let memberSegmentIds = new Set();
